@@ -26,6 +26,11 @@ void enqueue_state_update();
 void check_humidity();
 void check_fan();
 bool fan_has_co2_reading();
+void set_relay_output(
+    uint8_t pin,
+    bool active_low,
+    bool state,
+    bool off_uses_input_mode);
 const char *command_type_name(CommandType type);
 
 const char *command_type_name(CommandType type)
@@ -44,14 +49,49 @@ const char *command_type_name(CommandType type)
     return "unknown";
 }
 
+void set_relay_output(
+    uint8_t pin,
+    bool active_low,
+    bool state,
+    bool off_uses_input_mode)
+{
+    if (state)
+    {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, active_low ? LOW : HIGH);
+        return;
+    }
+
+    if (active_low && off_uses_input_mode)
+    {
+        // Some 5V low-level relay boards do not fully turn off from a 3.3V HIGH.
+        // Releasing the pin to high impedance lets the module's pull-up return it to idle.
+        digitalWrite(pin, HIGH);
+        pinMode(pin, INPUT);
+        return;
+    }
+
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, active_low ? HIGH : LOW);
+}
+
 void io_setup()
 {
-    pinMode(FAN_PIN, OUTPUT);
-    pinMode(SOIL_WATER_PUMP, OUTPUT);
-    pinMode(AIR_WATER_PUMP, OUTPUT);
-    digitalWrite(SOIL_WATER_PUMP, SOIL_WATER_PUMP_OFF_LEVEL);
-    digitalWrite(AIR_WATER_PUMP, AIR_WATER_PUMP_OFF_LEVEL);
-    digitalWrite(FAN_PIN, FAN_OFF_LEVEL);
+    set_relay_output(
+        FAN_PIN,
+        FAN_ACTIVE_LOW,
+        false,
+        FAN_OFF_USES_INPUT_MODE);
+    set_relay_output(
+        SOIL_WATER_PUMP,
+        SOIL_WATER_PUMP_ACTIVE_LOW,
+        false,
+        SOIL_WATER_PUMP_OFF_USES_INPUT_MODE);
+    set_relay_output(
+        AIR_WATER_PUMP,
+        AIR_WATER_PUMP_ACTIVE_LOW,
+        false,
+        AIR_WATER_PUMP_OFF_USES_INPUT_MODE);
     log_i(
         "Relay polarity fan=%d soil=%d air=%d",
         FAN_ACTIVE_LOW,
@@ -63,6 +103,11 @@ void io_setup()
         SOIL_WATER_PUMP,
         AIR_WATER_PUMP,
         STRIP_PIN);
+    log_i(
+        "Relay off mode fan=%s soil=%s air=%s",
+        FAN_OFF_USES_INPUT_MODE ? "input" : "drive",
+        SOIL_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive",
+        AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive");
 
 #if MHZ19_ENABLED
     mySerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
@@ -326,39 +371,50 @@ void turn_led(bool newState)
 }
 void turn_fan(bool newState)
 {
-    digitalWrite(FAN_PIN, newState ? FAN_ON_LEVEL : FAN_OFF_LEVEL);
+    set_relay_output(
+        FAN_PIN,
+        FAN_ACTIVE_LOW,
+        newState,
+        FAN_OFF_USES_INPUT_MODE);
     agro_state.fan = newState;
     log_i(
-        "Fan state changed to %d (pin=%d active_low=%d)",
+        "Fan state changed to %d (pin=%d active_low=%d off_mode=%s)",
         agro_state.fan,
         newState ? FAN_ON_LEVEL : FAN_OFF_LEVEL,
-        FAN_ACTIVE_LOW);
+        FAN_ACTIVE_LOW,
+        FAN_OFF_USES_INPUT_MODE ? "input" : "drive");
     enqueue_state_update();
 }
 void turn_soil_water_pump(bool newState)
 {
-    digitalWrite(
+    set_relay_output(
         SOIL_WATER_PUMP,
-        newState ? SOIL_WATER_PUMP_ON_LEVEL : SOIL_WATER_PUMP_OFF_LEVEL);
+        SOIL_WATER_PUMP_ACTIVE_LOW,
+        newState,
+        SOIL_WATER_PUMP_OFF_USES_INPUT_MODE);
     agro_state.soil_water_pump = newState;
     log_i(
-        "Soil water pump state changed to %d (pin=%d active_low=%d)",
+        "Soil water pump state changed to %d (pin=%d active_low=%d off_mode=%s)",
         agro_state.soil_water_pump,
         newState ? SOIL_WATER_PUMP_ON_LEVEL : SOIL_WATER_PUMP_OFF_LEVEL,
-        SOIL_WATER_PUMP_ACTIVE_LOW);
+        SOIL_WATER_PUMP_ACTIVE_LOW,
+        SOIL_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive");
     enqueue_state_update();
 }
 void turn_air_water_pump(bool newState)
 {
-    digitalWrite(
+    set_relay_output(
         AIR_WATER_PUMP,
-        newState ? AIR_WATER_PUMP_ON_LEVEL : AIR_WATER_PUMP_OFF_LEVEL);
+        AIR_WATER_PUMP_ACTIVE_LOW,
+        newState,
+        AIR_WATER_PUMP_OFF_USES_INPUT_MODE);
     agro_state.air_water_pump = newState;
     log_i(
-        "Air water pump state changed to %d (pin=%d active_low=%d)",
+        "Air water pump state changed to %d (pin=%d active_low=%d off_mode=%s)",
         agro_state.air_water_pump,
         newState ? AIR_WATER_PUMP_ON_LEVEL : AIR_WATER_PUMP_OFF_LEVEL,
-        AIR_WATER_PUMP_ACTIVE_LOW);
+        AIR_WATER_PUMP_ACTIVE_LOW,
+        AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive");
     enqueue_state_update();
 }
 void check_moisture()
