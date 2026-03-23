@@ -49,9 +49,20 @@ void io_setup()
     pinMode(FAN_PIN, OUTPUT);
     pinMode(SOIL_WATER_PUMP, OUTPUT);
     pinMode(AIR_WATER_PUMP, OUTPUT);
-    digitalWrite(SOIL_WATER_PUMP, LOW);
-    digitalWrite(AIR_WATER_PUMP, LOW);
+    digitalWrite(SOIL_WATER_PUMP, SOIL_WATER_PUMP_OFF_LEVEL);
+    digitalWrite(AIR_WATER_PUMP, AIR_WATER_PUMP_OFF_LEVEL);
     digitalWrite(FAN_PIN, FAN_OFF_LEVEL);
+    log_i(
+        "Relay polarity fan=%d soil=%d air=%d",
+        FAN_ACTIVE_LOW,
+        SOIL_WATER_PUMP_ACTIVE_LOW,
+        AIR_WATER_PUMP_ACTIVE_LOW);
+    log_i(
+        "Output pins fan=%d soil=%d air=%d strip=%d",
+        FAN_PIN,
+        SOIL_WATER_PUMP,
+        AIR_WATER_PUMP,
+        STRIP_PIN);
 
 #if MHZ19_ENABLED
     mySerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
@@ -76,6 +87,7 @@ void io_setup()
 
 #if DHT_ENABLED
     dht.begin();
+    log_i("DHT enabled on pin=%d type=%d", DHTPIN, DHTTYPE);
 #else
     log_i("DHT sensor is disabled in io_handler.h");
 #endif
@@ -163,23 +175,29 @@ void update_sensors()
     if (temperature_ok)
     {
         agro_state.temperature = (int)t;
+        agro_state.temperature_ready = true;
     }
     else
     {
+        agro_state.temperature_ready = false;
         log_w("Failed to read temperature from DHT");
     }
 
     if (humidity_ok)
     {
         agro_state.humidity = (int)h;
+        agro_state.humidity_ready = true;
     }
     else
     {
+        agro_state.humidity_ready = false;
         log_w("Failed to read humidity from DHT");
     }
 #else
     bool humidity_ok = false;
     bool temperature_ok = false;
+    agro_state.humidity_ready = false;
+    agro_state.temperature_ready = false;
 #endif
 
     read_co2_sensor();
@@ -195,10 +213,11 @@ void update_sensors()
         agro_state.soil_moisture,
         light_raw,
         agro_state.light);
-    agro_state.sensors_ready = humidity_ok && temperature_ok;
+    agro_state.sensors_ready =
+        agro_state.humidity_ready && agro_state.temperature_ready;
     if (DHT_ENABLED && !agro_state.sensors_ready)
     {
-        log_w("Skipping AI updates until DHT readings recover");
+        log_w("Humidity/temperature automations paused until DHT readings recover");
     }
     enqueue_state_update();
 }
@@ -274,6 +293,7 @@ void read_co2_sensor()
     if (myMHZ19.errorCode == RESULT_OK && co2 > 0)
     {
         agro_state.air_co2 = co2;
+        agro_state.air_co2_ready = true;
         mhz19_available = true;
         return;
     }
@@ -284,20 +304,20 @@ void read_co2_sensor()
     }
 
     mhz19_available = false;
+    agro_state.air_co2_ready = false;
     mhz19_retry_after = millis() + 60000;
 #endif
 }
 bool fan_has_co2_reading()
 {
 #if MHZ19_ENABLED
-    return mhz19_available && agro_state.air_co2 > 0;
+    return agro_state.air_co2_ready && agro_state.air_co2 > 0;
 #else
     return false;
 #endif
 }
 void turn_led(bool newState)
 {
-    // digitalWrite(LED_PIN, newState);
     fill_solid(leds, NUMLEDS, CHSV(0, 0, newState ? 255 : 0));
     FastLED.show();
     agro_state.led = newState;
@@ -317,16 +337,28 @@ void turn_fan(bool newState)
 }
 void turn_soil_water_pump(bool newState)
 {
-    digitalWrite(SOIL_WATER_PUMP, newState);
+    digitalWrite(
+        SOIL_WATER_PUMP,
+        newState ? SOIL_WATER_PUMP_ON_LEVEL : SOIL_WATER_PUMP_OFF_LEVEL);
     agro_state.soil_water_pump = newState;
-    log_i("Soil water pump state changed to %d", agro_state.soil_water_pump);
+    log_i(
+        "Soil water pump state changed to %d (pin=%d active_low=%d)",
+        agro_state.soil_water_pump,
+        newState ? SOIL_WATER_PUMP_ON_LEVEL : SOIL_WATER_PUMP_OFF_LEVEL,
+        SOIL_WATER_PUMP_ACTIVE_LOW);
     enqueue_state_update();
 }
 void turn_air_water_pump(bool newState)
 {
-    digitalWrite(AIR_WATER_PUMP, newState);
+    digitalWrite(
+        AIR_WATER_PUMP,
+        newState ? AIR_WATER_PUMP_ON_LEVEL : AIR_WATER_PUMP_OFF_LEVEL);
     agro_state.air_water_pump = newState;
-    log_i("Air water pump state changed to %d", agro_state.air_water_pump);
+    log_i(
+        "Air water pump state changed to %d (pin=%d active_low=%d)",
+        agro_state.air_water_pump,
+        newState ? AIR_WATER_PUMP_ON_LEVEL : AIR_WATER_PUMP_OFF_LEVEL,
+        AIR_WATER_PUMP_ACTIVE_LOW);
     enqueue_state_update();
 }
 void check_moisture()
@@ -353,6 +385,10 @@ void check_light()
 }
 void check_humidity()
 {
+    if (!agro_state.humidity_ready)
+    {
+        return;
+    }
     if (!agro_state.air_water_pump && agro_state.humidity < agro_settings.min_humidity)
     {
         turn_air_water_pump(true);
@@ -364,9 +400,21 @@ void check_humidity()
 }
 void check_fan()
 {
+    bool temperature_ready = agro_state.temperature_ready;
     bool co2_ready = fan_has_co2_reading();
-    bool should_turn_on = agro_state.temperature > agro_settings.max_temperature;
-    bool should_turn_off = agro_state.temperature < agro_settings.min_temperature;
+    if (!temperature_ready && !co2_ready)
+    {
+        return;
+    }
+
+    bool should_turn_on = false;
+    bool should_turn_off = true;
+
+    if (temperature_ready)
+    {
+        should_turn_on = agro_state.temperature > agro_settings.max_temperature;
+        should_turn_off = agro_state.temperature < agro_settings.min_temperature;
+    }
 
     if (co2_ready)
     {
@@ -385,7 +433,7 @@ void check_fan()
 }
 void ai_handler()
 {
-    if (!agro_settings.ai_mode || !agro_state.sensors_ready)
+    if (!agro_settings.ai_mode)
     {
         return;
     }

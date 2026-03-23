@@ -1,4 +1,5 @@
 #include <Preferences.h>
+#include <secrets_config.h>
 #include <states.h>
 
 QueueHandle_t mqttToIo;
@@ -7,6 +8,7 @@ QueueHandle_t ioToMqtt;
 States agro_state;
 
 SensorSettings agro_settings;
+String agro_mqtt_topic_id = MQTT_CLIENT_ID;
 
 namespace
 {
@@ -48,6 +50,7 @@ void load_settings()
     agro_settings.max_light = preferences.getInt(
         "max_light", agro_settings.max_light
     );
+    agro_mqtt_topic_id = preferences.getString("mqtt_topic_id", MQTT_CLIENT_ID);
     preferences.end();
 }
 
@@ -71,5 +74,12 @@ void save_sensor_settings()
     preferences.putInt("max_air_co2", agro_settings.max_air_co2);
     preferences.putInt("min_light", agro_settings.min_light);
     preferences.putInt("max_light", agro_settings.max_light);
+    preferences.end();
+}
+
+void save_mqtt_topic_id()
+{
+    preferences.begin(PREFERENCES_NAMESPACE, false);
+    preferences.putString("mqtt_topic_id", agro_mqtt_topic_id);
     preferences.end();
 }

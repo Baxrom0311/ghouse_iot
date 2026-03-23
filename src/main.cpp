@@ -10,6 +10,7 @@ void setup()
   Serial.begin(115200);
   esp_log_level_set("*", ESP_LOG_INFO);
   delay(1000);
+  io_setup();
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
@@ -49,7 +50,6 @@ void setup()
   mqttToIo = xQueueCreate(10, sizeof(Command));
   ioToMqtt = xQueueCreate(10, sizeof(Callback));
   mqtt_setup();
-  io_setup();
 }
 
 void loop()

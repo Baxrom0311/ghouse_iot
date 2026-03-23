@@ -15,6 +15,9 @@ struct States
     bool led = false;
     bool fan = false;
     bool sensors_ready = false;
+    bool humidity_ready = false;
+    bool temperature_ready = false;
+    bool air_co2_ready = false;
 };
 struct SensorSettings
 {
@@ -35,6 +38,8 @@ struct SensorSettings
 
     bool ai_mode = true;
 };
+
+extern String agro_mqtt_topic_id;
 
 enum class CommandType
 {
@@ -66,3 +71,4 @@ extern SensorSettings agro_settings;
 void load_settings();
 void save_ai_mode();
 void save_sensor_settings();
+void save_mqtt_topic_id();
