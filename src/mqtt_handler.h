@@ -4,8 +4,9 @@
 #include <states.h>
 #include <ArduinoJson.h>
 #include <secrets_config.h>
-
-#define MQTT_IP MQTT_BROKER_IP
+#if MQTT_TLS_ENABLED
+#include <WiFiClientSecure.h>
+#endif
 
 void mqtt_setup();
 void mqtt_loop();

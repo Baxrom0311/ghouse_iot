@@ -1,12 +1,27 @@
 #include <mqtt_handler.h>
 #include <display_handler.h>
 
+#if MQTT_TLS_ENABLED
+namespace
+{
+WiFiClientSecure mqtt_transport;
+}
+
 PicoMQTT::Client mqtt_client(
-    MQTT_IP,
-    1883,
+    mqtt_transport,
+    MQTT_BROKER_HOST,
+    MQTT_BROKER_PORT,
     MQTT_CLIENT_ID,
     MQTT_USERNAME,
     MQTT_PASSWORD);
+#else
+PicoMQTT::Client mqtt_client(
+    MQTT_BROKER_HOST,
+    MQTT_BROKER_PORT,
+    MQTT_CLIENT_ID,
+    MQTT_USERNAME,
+    MQTT_PASSWORD);
+#endif
 
 void soil_water_pump_control(const char *topic, const char *payload);
 void air_water_pump_control(const char *topic, const char *payload);
@@ -40,6 +55,14 @@ String topic_ping;
 String topic_state;
 String topic_log;
 String topic_topic_id_update;
+
+void configure_mqtt_transport()
+{
+#if MQTT_TLS_ENABLED
+    mqtt_transport.setHandshakeTimeout(MQTT_TLS_HANDSHAKE_TIMEOUT_SEC);
+    mqtt_transport.setCACert(MQTT_ROOT_CA);
+#endif
+}
 
 String build_topic(const char *suffix)
 {
@@ -89,6 +112,12 @@ void mqtt_setup()
     lcd.setCursor(0, 1);
     lcd.print("MQTT");
     delay(500);
+    configure_mqtt_transport();
+    log_i(
+        "MQTT connect host=%s port=%u tls=%d",
+        MQTT_BROKER_HOST,
+        static_cast<unsigned>(MQTT_BROKER_PORT),
+        MQTT_TLS_ENABLED);
     refresh_topics();
     mqtt_client.subscribe(topic_mode_ai.c_str(), ai_mode);
 
