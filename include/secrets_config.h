@@ -9,3 +9,11 @@
 #else
 #include "secrets.example.h"
 #endif
+
+#ifndef MQTT_USERNAME
+#define MQTT_USERNAME ""
+#endif
+
+#ifndef MQTT_PASSWORD
+#define MQTT_PASSWORD ""
+#endif

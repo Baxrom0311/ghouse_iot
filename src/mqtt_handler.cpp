@@ -1,7 +1,12 @@
 #include <mqtt_handler.h>
 #include <display_handler.h>
 
-PicoMQTT::Client mqtt_client(MQTT_IP);
+PicoMQTT::Client mqtt_client(
+    MQTT_IP,
+    1883,
+    MQTT_CLIENT_ID,
+    MQTT_USERNAME,
+    MQTT_PASSWORD);
 
 void soil_water_pump_control(const char *topic, const char *payload);
 void air_water_pump_control(const char *topic, const char *payload);
@@ -133,8 +138,28 @@ void ai_mode(const char *topic, const char *payload)
 void topic_id_update(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    String new_topic_id = payload;
+    String new_topic_id;
+    String update_token;
+    String current_topic_id = agro_mqtt_topic_id;
+    JsonDocument update_doc;
+    DeserializationError update_error = deserializeJson(update_doc, payload);
+    if (!update_error)
+    {
+        if (update_doc["topic_id"].is<const char *>())
+        {
+            new_topic_id = update_doc["topic_id"].as<const char *>();
+        }
+        if (update_doc["token"].is<const char *>())
+        {
+            update_token = update_doc["token"].as<const char *>();
+        }
+    }
+    else
+    {
+        new_topic_id = payload;
+    }
     new_topic_id.trim();
+    update_token.trim();
     if (new_topic_id.isEmpty())
     {
         log_w("Ignoring empty MQTT topic id update");
@@ -153,7 +178,40 @@ void topic_id_update(const char *topic, const char *payload)
 
     agro_mqtt_topic_id = new_topic_id;
     save_mqtt_topic_id();
+
+    String ack_topic = new_topic_id + "/system/topic_id/ack";
+    String ack_payload;
+    if (!update_token.isEmpty())
+    {
+        JsonDocument ack_doc;
+        ack_doc["topic_id"] = new_topic_id;
+        ack_doc["token"] = update_token;
+        serializeJson(ack_doc, ack_payload);
+    }
+    else
+    {
+        ack_payload = new_topic_id;
+    }
+    bool ack_published = mqtt_client.publish(
+        ack_topic.c_str(),
+        ack_payload.c_str(),
+        true);
+    log_i(
+        "Published topic id ack=%d on %s with payload=%s",
+        ack_published,
+        ack_topic.c_str(),
+        ack_payload.c_str());
+
+    if (!ack_published)
+    {
+        log_w("Topic id update aborted because ack publish failed");
+        agro_mqtt_topic_id = current_topic_id;
+        save_mqtt_topic_id();
+        return;
+    }
+
     log_i("Persisted new MQTT topic id=%s. Restarting to resubscribe.", agro_mqtt_topic_id.c_str());
+    delay(250);
     delay(500);
     ESP.restart();
 }
