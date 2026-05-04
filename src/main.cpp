@@ -137,11 +137,12 @@ void setup()
   connect_wifi_or_restart();
   log_i("Connected");
   sync_time_for_tls();
+  lcd.init();
   lcd.clear();
-  lcd.setCursor(5, 0);
-  lcd.print("Wi-Fi");
+  lcd.setCursor(0, 0);
+  lcd.print("Wi-Fi OK");
   lcd.setCursor(0, 1);
-  lcd.print("Connected");
+  lcd.print("MQTT...");
   delay(200);
   mqttToIo = xQueueCreate(10, sizeof(Command));
   ioToMqtt = xQueueCreate(10, sizeof(Callback));

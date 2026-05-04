@@ -15,7 +15,8 @@ void AgroDisplay::init()
     tft.initR(TFT_INIT_TAB);
     tft.setRotation(TFT_ROTATION);
     tft.setTextWrap(false);
-    tft.setTextSize(1);
+    text_size = TFT_TEXT_SIZE;
+    tft.setTextSize(text_size);
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.fillScreen(ST77XX_BLACK);
 
@@ -64,6 +65,23 @@ void AgroDisplay::setTextColor(uint16_t color)
     tft.setTextColor(color, ST77XX_BLACK);
 }
 
+void AgroDisplay::setTextSize(uint8_t size)
+{
+    if (size == 0)
+    {
+        return;
+    }
+
+    text_size = size;
+    if (!initialized)
+    {
+        return;
+    }
+
+    tft.setTextSize(text_size);
+    apply_cursor();
+}
+
 size_t AgroDisplay::write(uint8_t value)
 {
     if (!initialized)
@@ -91,5 +109,5 @@ void AgroDisplay::apply_cursor()
         return;
     }
 
-    tft.setCursor(cursor_col * CHAR_WIDTH, cursor_row * LINE_HEIGHT);
+    tft.setCursor(cursor_col * CHAR_WIDTH * text_size, cursor_row * LINE_HEIGHT * text_size);
 }

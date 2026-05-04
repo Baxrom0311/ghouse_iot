@@ -13,7 +13,8 @@
 #define TFT_SCL_PIN 18
 #define TFT_BL_PIN 4
 #define TFT_BACKLIGHT_ACTIVE_LOW 0
-#define TFT_ROTATION 0
+#define TFT_ROTATION 1
+#define TFT_TEXT_SIZE 2
 #define TFT_INIT_TAB INITR_BLACKTAB
 
 class AgroDisplay : public Print
@@ -26,6 +27,7 @@ public:
     void clear();
     void setCursor(uint8_t col, uint8_t row);
     void setTextColor(uint16_t color);
+    void setTextSize(uint8_t size);
     size_t write(uint8_t value) override;
 
     using Print::print;
@@ -39,6 +41,7 @@ private:
     Adafruit_ST7735 tft;
     uint8_t cursor_col = 0;
     uint8_t cursor_row = 0;
+    uint8_t text_size = TFT_TEXT_SIZE;
     bool initialized = false;
 
     void apply_cursor();

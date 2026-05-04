@@ -355,11 +355,11 @@ void update_display_page()
     lcd.clear();
     lcd.setTextColor(ST77XX_CYAN);
     lcd.setCursor(0, 0);
-    lcd.print("AgroAi Greenhouse");
+    lcd.print("AgroAi");
 
     lcd.setTextColor(agro_settings.ai_mode ? ST77XX_GREEN : ST77XX_YELLOW);
-    lcd.setCursor(0, 2);
-    lcd.print(agro_settings.ai_mode ? "Mode: AI" : "Mode: Manual");
+    lcd.setCursor(0, 1);
+    lcd.print(agro_settings.ai_mode ? "Mode:AI" : "Mode:MAN");
 
     lcd.setTextColor(ST77XX_WHITE);
     char moisture_text[8];
@@ -380,10 +380,6 @@ void update_display_page()
     {
         snprintf(light_text, sizeof(light_text), "-");
     }
-    snprintf(line, sizeof(line), "Soil:%s Light:%s", moisture_text, light_text);
-    lcd.setCursor(0, 4);
-    lcd.print(line);
-
 #if DHT_ENABLED
     char temperature_text[8];
     char humidity_text[8];
@@ -406,40 +402,44 @@ void update_display_page()
     snprintf(
         line,
         sizeof(line),
-        "Temp:%s Hum:%s",
+        "T:%s H:%s",
         temperature_text,
         humidity_text);
 #else
-    snprintf(line, sizeof(line), "Temp:- Hum:-");
+    snprintf(line, sizeof(line), "T:- H:-");
 #endif
-    lcd.setCursor(0, 6);
+    lcd.setCursor(0, 2);
+    lcd.print(line);
+
+    snprintf(line, sizeof(line), "M:%s L:%s", moisture_text, light_text);
+    lcd.setCursor(0, 3);
     lcd.print(line);
 
 #if MQ135_ENABLED
     if (agro_state.air_co2_ready)
     {
-        snprintf(line, sizeof(line), "Air:%4d ppm", agro_state.air_co2);
+        snprintf(line, sizeof(line), "Air:%dppm", agro_state.air_co2);
     }
     else
     {
-        snprintf(line, sizeof(line), "Air:- ppm");
+        snprintf(line, sizeof(line), "Air:-");
     }
 #else
     snprintf(line, sizeof(line), "Air:-");
 #endif
-    lcd.setCursor(0, 8);
+    lcd.setCursor(0, 4);
     lcd.print(line);
 
     lcd.setTextColor(ST77XX_MAGENTA);
     snprintf(
         line,
         sizeof(line),
-        "F:%d S:%d A:%d L:%d",
+        "F%d S%d A%d L%d",
         agro_state.fan ? 1 : 0,
         agro_state.soil_water_pump ? 1 : 0,
         agro_state.air_water_pump ? 1 : 0,
         agro_state.led ? 1 : 0);
-    lcd.setCursor(0, 11);
+    lcd.setCursor(0, 5);
     lcd.print(line);
 
     lcd.setTextColor(ST77XX_WHITE);
