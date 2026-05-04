@@ -1,5 +1,6 @@
 #include <mqtt_handler.h>
 #include <display_handler.h>
+#include <io_handler.h>
 #include <ctype.h>
 
 #if MQTT_TLS_ENABLED
@@ -460,8 +461,8 @@ void air_settings(const char *topic, const char *payload)
         agro_settings.min_air_co2,
         agro_settings.max_air_co2,
         "air",
-        0,
-        10000);
+        MQ135_MIN_PPM,
+        MQ135_MAX_PPM);
 }
 
 bool update_bounds(
@@ -545,8 +546,8 @@ void bulk_settings(const char *topic, const char *payload)
                   agro_settings.min_air_co2,
                   agro_settings.max_air_co2,
                   "air",
-                  0,
-                  10000) ||
+                  MQ135_MIN_PPM,
+                  MQ135_MAX_PPM) ||
               changed;
 
     if (changed)
