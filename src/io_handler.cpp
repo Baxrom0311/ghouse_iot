@@ -298,66 +298,86 @@ void update_sensors()
 }
 void update_display_page()
 {
-    char line0[17];
-    char line1[17];
+    char line[32];
 
+    lcd.clear();
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.setCursor(0, 0);
+    lcd.print("AgroAi Greenhouse");
+
+    lcd.setTextColor(agro_settings.ai_mode ? ST77XX_GREEN : ST77XX_YELLOW);
+    lcd.setCursor(0, 2);
+    lcd.print(agro_settings.ai_mode ? "Mode: AI" : "Mode: Manual");
+
+    lcd.setTextColor(ST77XX_WHITE);
     snprintf(
-        line0,
-        sizeof(line0),
-        "%s M:%3d L:%3d",
-        agro_settings.ai_mode ? "AI" : "MAN",
+        line,
+        sizeof(line),
+        "Soil:%3d%% Light:%3d%%",
         agro_state.soil_moisture,
         agro_state.light);
+    lcd.setCursor(0, 4);
+    lcd.print(line);
 
 #if DHT_ENABLED
-#if MQ135_ENABLED
-    if (agro_state.sensors_ready)
+    char temperature_text[8];
+    char humidity_text[8];
+    if (agro_state.temperature_ready)
     {
-        snprintf(
-            line1,
-            sizeof(line1),
-            "T:%2d H:%2d A:%3d",
-            agro_state.temperature,
-            agro_state.humidity,
-            agro_state.air_co2);
+        snprintf(temperature_text, sizeof(temperature_text), "%d", agro_state.temperature);
     }
     else
     {
-        snprintf(line1, sizeof(line1), "T:-- H:-- A:--");
+        snprintf(temperature_text, sizeof(temperature_text), "--");
     }
-#else
-    if (agro_state.sensors_ready)
+    if (agro_state.humidity_ready)
     {
-        snprintf(
-            line1,
-            sizeof(line1),
-            "T:%2d H:%2d A:OFF",
-            agro_state.temperature,
-            agro_state.humidity);
+        snprintf(humidity_text, sizeof(humidity_text), "%d", agro_state.humidity);
     }
     else
     {
-        snprintf(line1, sizeof(line1), "T:-- H:-- A:OFF");
+        snprintf(humidity_text, sizeof(humidity_text), "--");
     }
-#endif
+    snprintf(
+        line,
+        sizeof(line),
+        "Temp:%s Hum:%s",
+        temperature_text,
+        humidity_text);
 #else
+    snprintf(line, sizeof(line), "Temp:OFF Hum:OFF");
+#endif
+    lcd.setCursor(0, 6);
+    lcd.print(line);
+
 #if MQ135_ENABLED
-    snprintf(line1, sizeof(line1), "DHT OFF A:%4d", agro_state.air_co2);
+    if (agro_state.air_co2_ready)
+    {
+        snprintf(line, sizeof(line), "Air:%4d ppm", agro_state.air_co2);
+    }
+    else
+    {
+        snprintf(line, sizeof(line), "Air:-- ppm");
+    }
 #else
-    snprintf(line1, sizeof(line1), "DHT OFF A:OFF");
+    snprintf(line, sizeof(line), "Air:OFF");
 #endif
-#endif
+    lcd.setCursor(0, 8);
+    lcd.print(line);
 
-    // Pad strings with spaces to overwrite previous characters
-    String s0 = String(line0);
-    while (s0.length() < 16) s0 += " ";
-    String s1 = String(line1);
-    while (s1.length() < 16) s1 += " ";
+    lcd.setTextColor(ST77XX_MAGENTA);
+    snprintf(
+        line,
+        sizeof(line),
+        "F:%d S:%d A:%d L:%d",
+        agro_state.fan ? 1 : 0,
+        agro_state.soil_water_pump ? 1 : 0,
+        agro_state.air_water_pump ? 1 : 0,
+        agro_state.led ? 1 : 0);
+    lcd.setCursor(0, 11);
+    lcd.print(line);
 
-    lcd.setCursor(0, 0);
-    lcd.print(s0.c_str());
-    lcd.setCursor(0, 1);
-    lcd.print(s1.c_str());
+    lcd.setTextColor(ST77XX_WHITE);
 }
 void read_air_sensor()
 {
