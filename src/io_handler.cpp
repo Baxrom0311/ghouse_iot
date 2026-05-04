@@ -6,12 +6,6 @@ DHT dht(DHTPIN, DHTTYPE);
 #if !LED_DRIVER_RELAY
 CRGB leds[NUMLEDS];
 #endif
-#define RXD2 16
-#define TXD2 17
-HardwareSerial mySerial(2);
-MHZ19 myMHZ19;
-bool mhz19_available = true;
-uint32_t mhz19_retry_after = 0;
 
 void io_setup();
 void io_loop();
@@ -22,7 +16,7 @@ void turn_air_water_pump(bool newState);
 void command_handler();
 void ai_handler();
 void update_sensors();
-void read_co2_sensor();
+void read_air_sensor();
 void update_display_page();
 void enqueue_state_update();
 void enqueue_command_ack(const Command &command, const char *status, const char *message);
@@ -121,21 +115,15 @@ void io_setup()
         AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive",
         LED_RELAY_OFF_USES_INPUT_MODE ? "input" : "drive");
 
-#if MHZ19_ENABLED
-    mySerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
-    delay(1000);
-    myMHZ19.begin(mySerial);
-    myMHZ19.setRange(10000);
-    if (myMHZ19.errorCode != RESULT_OK)
-    {
-        mhz19_available = false;
-        mhz19_retry_after = millis();
-        log_w("MH-Z19 init failed with error=%d, CO2 reads paused for 60s", myMHZ19.errorCode);
-    }
-    // myMHZ19.autoCalibration();
+#if MQ135_ENABLED
+    pinMode(MQ135_PIN, INPUT);
+#if defined(ARDUINO_ARCH_ESP32)
+    analogSetPinAttenuation(MQ135_PIN, ADC_11db);
+#endif
+    log_i("MQ135 air sensor enabled on analog pin=%d", MQ135_PIN);
 #else
-    mhz19_available = false;
-    log_i("MH-Z19 sensor is disabled in io_handler.h");
+    agro_state.air_co2_ready = false;
+    log_i("MQ135 air sensor is disabled in io_handler.h");
 #endif
 
 #if LED_DRIVER_RELAY
@@ -286,7 +274,7 @@ void update_sensors()
     agro_state.temperature_ready = false;
 #endif
 
-    read_co2_sensor();
+    read_air_sensor();
 
     int moisture_raw = analogRead(MOISTURE_SENSOR);
     // Typical capacitive moisture sensors output high values when dry and low values when wet.
@@ -322,20 +310,20 @@ void update_display_page()
         agro_state.light);
 
 #if DHT_ENABLED
-#if MHZ19_ENABLED
+#if MQ135_ENABLED
     if (agro_state.sensors_ready)
     {
         snprintf(
             line1,
             sizeof(line1),
-            "T:%2d H:%2d C:%3d",
+            "T:%2d H:%2d A:%3d",
             agro_state.temperature,
             agro_state.humidity,
             agro_state.air_co2);
     }
     else
     {
-        snprintf(line1, sizeof(line1), "T:-- H:-- C:--");
+        snprintf(line1, sizeof(line1), "T:-- H:-- A:--");
     }
 #else
     if (agro_state.sensors_ready)
@@ -343,20 +331,20 @@ void update_display_page()
         snprintf(
             line1,
             sizeof(line1),
-            "T:%2d H:%2d CO2OFF",
+            "T:%2d H:%2d A:OFF",
             agro_state.temperature,
             agro_state.humidity);
     }
     else
     {
-        snprintf(line1, sizeof(line1), "T:-- H:-- CO2OFF");
+        snprintf(line1, sizeof(line1), "T:-- H:-- A:OFF");
     }
 #endif
 #else
-#if MHZ19_ENABLED
-    snprintf(line1, sizeof(line1), "DHT OFF C:%4d", agro_state.air_co2);
+#if MQ135_ENABLED
+    snprintf(line1, sizeof(line1), "DHT OFF A:%4d", agro_state.air_co2);
 #else
-    snprintf(line1, sizeof(line1), "DHT OFF CO2OFF");
+    snprintf(line1, sizeof(line1), "DHT OFF A:OFF");
 #endif
 #endif
 
@@ -371,38 +359,29 @@ void update_display_page()
     lcd.setCursor(0, 1);
     lcd.print(s1.c_str());
 }
-void read_co2_sensor()
+void read_air_sensor()
 {
-#if !MHZ19_ENABLED
-    return;
+#if MQ135_ENABLED
+    int raw = analogRead(MQ135_PIN);
+    int normalized_raw = constrain(
+        raw,
+        MQ135_CLEAN_AIR_RAW,
+        MQ135_POLLUTED_AIR_RAW);
+    agro_state.air_co2 = map(
+        normalized_raw,
+        MQ135_CLEAN_AIR_RAW,
+        MQ135_POLLUTED_AIR_RAW,
+        MQ135_MIN_PPM,
+        MQ135_MAX_PPM);
+    agro_state.air_co2_ready = true;
+    log_i("MQ135 raw=%d air_estimate=%d", raw, agro_state.air_co2);
 #else
-    if (!mhz19_available && (millis() - mhz19_retry_after < 60000))
-    {
-        return;
-    }
-
-    int co2 = myMHZ19.getCO2();
-    if (myMHZ19.errorCode == RESULT_OK && co2 > 0)
-    {
-        agro_state.air_co2 = co2;
-        agro_state.air_co2_ready = true;
-        mhz19_available = true;
-        return;
-    }
-
-    if (mhz19_available)
-    {
-        log_w("MH-Z19 read failed with error=%d, pausing CO2 retries for 60s", myMHZ19.errorCode);
-    }
-
-    mhz19_available = false;
     agro_state.air_co2_ready = false;
-    mhz19_retry_after = millis();
 #endif
 }
 bool fan_has_co2_reading()
 {
-#if MHZ19_ENABLED
+#if MQ135_ENABLED
     return agro_state.air_co2_ready && agro_state.air_co2 > 0;
 #else
     return false;

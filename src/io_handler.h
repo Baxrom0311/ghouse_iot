@@ -3,7 +3,6 @@
 #include <states.h>
 #include "DHT.h"
 #include "FastLED.h"
-#include "MHZ19.h"
 
 #define FAN_PIN 25
 #define SOIL_WATER_PUMP 27
@@ -32,11 +31,12 @@
 #define LIGHT_SENSOR 33
 #define DHTPIN 23
 #define DHT_ENABLED 1
-
-// MH_RX_PIN 10
-// MH_TX_PIN 11
-
-#define MHZ19_ENABLED 1
+#define MQ135_PIN 34
+#define MQ135_ENABLED 1
+#define MQ135_CLEAN_AIR_RAW 300
+#define MQ135_POLLUTED_AIR_RAW 2500
+#define MQ135_MIN_PPM 400
+#define MQ135_MAX_PPM 2000
 
 // Change to DHT11 if your module is not DHT22.
 #define DHTTYPE DHT22

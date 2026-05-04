@@ -43,7 +43,7 @@ Controller sends responses here
   "led": "0 | 1",
   "soil_water_pump": "0 | 1",
   "air_water_pump": "0 | 1",
-  "air": "400–10000",
+  "air": "400–2000",
   "light": "0–100",
   "humidity": "0–100",
   "temperature": "-128–127",
@@ -57,7 +57,13 @@ Controller sends responses here
 - Manual fan control comes from `{id}/fan/control`, but it only works when AI mode is off through `{id}/mode/ai = 0`.
 - In AI mode, fan turns on when temperature goes above `max_temperature`.
 - In AI mode, fan turns off when temperature goes below `min_temperature`.
-- If `MHZ19_ENABLED` is set to `1` and the CO2 sensor is working, fan also turns on above `max_air_co2` and turns off only after both temperature and CO2 drop below their `min_*` thresholds.
+- If `MQ135_ENABLED` is set to `1` and the air sensor is working, fan also turns on above `max_air_co2` and turns off only after both temperature and air readings drop below their `min_*` thresholds.
+
+# MQ135 air sensor
+- The current build uses MQ135 analog output on `GPIO34` (`MQ135_PIN`).
+- The published MQTT/API field stays `air`, so backend and frontend do not need changes.
+- MQ135 is not a calibrated CO2 sensor. The firmware maps analog raw readings from `MQ135_CLEAN_AIR_RAW` to `MQ135_POLLUTED_AIR_RAW` into an approximate `400-2000` air value for automation.
+- If your MQ135 module analog output can exceed 3.3V, use a voltage divider before connecting it to ESP32 `GPIO34`.
 
 # 12V relay wiring
 - Do not connect a 12V fan directly to ESP32 `GPIO13`.
