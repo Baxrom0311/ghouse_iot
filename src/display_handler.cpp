@@ -3,7 +3,7 @@
 AgroDisplay lcd;
 
 AgroDisplay::AgroDisplay()
-    : tft(TFT_CS_PIN, TFT_DC_PIN, TFT_MOSI_PIN, TFT_SCLK_PIN, TFT_RST_PIN)
+    : tft(TFT_CS_PIN, TFT_DC_PIN, TFT_SDA_PIN, TFT_SCL_PIN, TFT_RST_PIN)
 {
 }
 
