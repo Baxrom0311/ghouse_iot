@@ -7,12 +7,14 @@
 #include <ota_handler.h>
 #include <esp_task_wdt.h>
 #include <esp_idf_version.h>
+#include <time.h>
 
 namespace
 {
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
-constexpr uint32_t WATCHDOG_TIMEOUT_SEC = 15;
+constexpr uint32_t TLS_TIME_SYNC_TIMEOUT_MS = 15000;
+constexpr uint32_t WATCHDOG_TIMEOUT_SEC = 45;
 uint32_t last_wifi_reconnect_attempt = 0;
 
 void mqtt_task(void *parameter)
@@ -66,6 +68,28 @@ void connect_wifi_or_restart()
   }
 }
 
+void sync_time_for_tls()
+{
+#if MQTT_TLS_ENABLED
+  configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+  uint32_t sync_started = millis();
+  while (time(nullptr) < 1700000000 &&
+         millis() - sync_started < TLS_TIME_SYNC_TIMEOUT_MS)
+  {
+    esp_task_wdt_reset();
+    delay(500);
+    log_i("Waiting for NTP time sync...");
+  }
+
+  if (time(nullptr) < 1700000000)
+  {
+    log_w("NTP time sync timed out; MQTT TLS may fail");
+    return;
+  }
+  log_i("NTP time synced for MQTT TLS");
+#endif
+}
+
 void keep_wifi_connected()
 {
   if (WiFi.status() == WL_CONNECTED)
@@ -112,6 +136,7 @@ void setup()
   log_i("Connecting...");
   connect_wifi_or_restart();
   log_i("Connected");
+  sync_time_for_tls();
   lcd.clear();
   lcd.setCursor(5, 0);
   lcd.print("Wi-Fi");

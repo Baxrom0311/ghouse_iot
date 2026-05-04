@@ -570,7 +570,14 @@ void pub_states()
     {
         doc[F("air")] = nullptr;
     }
-    doc[F("light")] = agro_state.light;
+    if (agro_state.light_ready)
+    {
+        doc[F("light")] = agro_state.light;
+    }
+    else
+    {
+        doc[F("light")] = nullptr;
+    }
     if (agro_state.humidity_ready)
     {
         doc[F("humidity")] = agro_state.humidity;
@@ -587,7 +594,14 @@ void pub_states()
     {
         doc[F("temperature")] = nullptr;
     }
-    doc[F("moisture")] = agro_state.soil_moisture;
+    if (agro_state.soil_moisture_ready)
+    {
+        doc[F("moisture")] = agro_state.soil_moisture;
+    }
+    else
+    {
+        doc[F("moisture")] = nullptr;
+    }
     doc[F("fan")] = agro_state.fan;
     doc[F("led")] = agro_state.led;
     doc[F("soil_water_pump")] = agro_state.soil_water_pump;

@@ -44,7 +44,7 @@
 #define MQ135_MAX_PPM 2000
 
 // Change to DHT11 if your module is not DHT22.
-#define DHTTYPE DHT22
+#define DHTTYPE DHT11
 
 #define STRIP_PIN 23
 #define NUMLEDS 10
