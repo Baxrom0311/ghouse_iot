@@ -132,6 +132,12 @@ void io_setup()
     log_i("MQ135 air sensor is disabled in io_handler.h");
 #endif
 
+#if defined(ARDUINO_ARCH_ESP32)
+    analogSetPinAttenuation(MOISTURE_SENSOR, ADC_11db);
+    analogSetPinAttenuation(LIGHT_SENSOR, ADC_11db);
+#endif
+    log_i("Analog sensor pins moisture=%d light=%d", MOISTURE_SENSOR, LIGHT_SENSOR);
+
 #if LED_DRIVER_RELAY
     log_i("LED driver relay enabled on pin=%d", LED_RELAY_PIN);
 #else

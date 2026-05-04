@@ -29,7 +29,8 @@
 
 #define MOISTURE_SENSOR 32
 
-#define LIGHT_SENSOR 33
+// ESP32 DevKit A0 maps to GPIO36. Use the LDR module AO/A0 analog output here.
+#define LIGHT_SENSOR A0
 #define ANALOG_SENSOR_MIN_VALID_RAW 1
 #define ANALOG_SENSOR_MAX_VALID_RAW 4094
 
