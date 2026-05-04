@@ -18,6 +18,8 @@ struct States
     bool humidity_ready = false;
     bool temperature_ready = false;
     bool air_co2_ready = false;
+    bool soil_moisture_ready = false;
+    bool light_ready = false;
 };
 struct SensorSettings
 {

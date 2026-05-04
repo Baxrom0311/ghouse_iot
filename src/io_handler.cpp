@@ -280,8 +280,10 @@ void update_sensors()
     // Typical capacitive moisture sensors output high values when dry and low values when wet.
     int moisture = constrain(map(moisture_raw, 4096, 0, 0, 100), 0, 100);
     agro_state.soil_moisture = moisture;
+    agro_state.soil_moisture_ready = true;
     int light_raw = analogRead(LIGHT_SENSOR);
     agro_state.light = constrain(map(light_raw, 0, 4096, 0, 100), 0, 100);
+    agro_state.light_ready = true;
     log_i(
         "Moisture raw=%d pct=%d | Light raw=%d pct=%d",
         moisture_raw,
@@ -310,12 +312,25 @@ void update_display_page()
     lcd.print(agro_settings.ai_mode ? "Mode: AI" : "Mode: Manual");
 
     lcd.setTextColor(ST77XX_WHITE);
-    snprintf(
-        line,
-        sizeof(line),
-        "Soil:%3d%% Light:%3d%%",
-        agro_state.soil_moisture,
-        agro_state.light);
+    char moisture_text[8];
+    char light_text[8];
+    if (agro_state.soil_moisture_ready)
+    {
+        snprintf(moisture_text, sizeof(moisture_text), "%d%%", agro_state.soil_moisture);
+    }
+    else
+    {
+        snprintf(moisture_text, sizeof(moisture_text), "-");
+    }
+    if (agro_state.light_ready)
+    {
+        snprintf(light_text, sizeof(light_text), "%d%%", agro_state.light);
+    }
+    else
+    {
+        snprintf(light_text, sizeof(light_text), "-");
+    }
+    snprintf(line, sizeof(line), "Soil:%s Light:%s", moisture_text, light_text);
     lcd.setCursor(0, 4);
     lcd.print(line);
 
@@ -328,7 +343,7 @@ void update_display_page()
     }
     else
     {
-        snprintf(temperature_text, sizeof(temperature_text), "--");
+        snprintf(temperature_text, sizeof(temperature_text), "-");
     }
     if (agro_state.humidity_ready)
     {
@@ -336,7 +351,7 @@ void update_display_page()
     }
     else
     {
-        snprintf(humidity_text, sizeof(humidity_text), "--");
+        snprintf(humidity_text, sizeof(humidity_text), "-");
     }
     snprintf(
         line,
@@ -345,7 +360,7 @@ void update_display_page()
         temperature_text,
         humidity_text);
 #else
-    snprintf(line, sizeof(line), "Temp:OFF Hum:OFF");
+    snprintf(line, sizeof(line), "Temp:- Hum:-");
 #endif
     lcd.setCursor(0, 6);
     lcd.print(line);
@@ -357,10 +372,10 @@ void update_display_page()
     }
     else
     {
-        snprintf(line, sizeof(line), "Air:-- ppm");
+        snprintf(line, sizeof(line), "Air:- ppm");
     }
 #else
-    snprintf(line, sizeof(line), "Air:OFF");
+    snprintf(line, sizeof(line), "Air:-");
 #endif
     lcd.setCursor(0, 8);
     lcd.print(line);
