@@ -134,9 +134,20 @@ void io_setup()
 
 #if defined(ARDUINO_ARCH_ESP32)
     analogSetPinAttenuation(MOISTURE_SENSOR, ADC_11db);
+#if !LIGHT_SENSOR_DIGITAL
     analogSetPinAttenuation(LIGHT_SENSOR, ADC_11db);
 #endif
+#endif
+#if LIGHT_SENSOR_DIGITAL
+    pinMode(LIGHT_SENSOR, LIGHT_SENSOR_DIGITAL_INPUT_MODE);
+    log_i(
+        "Sensor pins moisture=%d light=%d mode=digital light_level=%d",
+        MOISTURE_SENSOR,
+        LIGHT_SENSOR,
+        LIGHT_SENSOR_DIGITAL_LIGHT_LEVEL);
+#else
     log_i("Analog sensor pins moisture=%d light=%d", MOISTURE_SENSOR, LIGHT_SENSOR);
+#endif
 
 #if LED_DRIVER_RELAY
     log_i("LED driver relay enabled on pin=%d", LED_RELAY_PIN);
@@ -301,6 +312,17 @@ void update_sensors()
         log_w("Moisture sensor raw=%d outside valid range", moisture_raw);
     }
 
+#if LIGHT_SENSOR_DIGITAL
+    int light_level = digitalRead(LIGHT_SENSOR);
+    agro_state.light_ready = true;
+    agro_state.light = light_level == LIGHT_SENSOR_DIGITAL_LIGHT_LEVEL ? 100 : 0;
+    log_i(
+        "Moisture raw=%d pct=%d | Light level=%d pct=%d",
+        moisture_raw,
+        agro_state.soil_moisture,
+        light_level,
+        agro_state.light);
+#else
     int light_raw = analogRead(LIGHT_SENSOR);
     agro_state.light_ready = analog_reading_ready(light_raw);
     if (agro_state.light_ready)
@@ -317,6 +339,7 @@ void update_sensors()
         agro_state.soil_moisture,
         light_raw,
         agro_state.light);
+#endif
     agro_state.sensors_ready =
         agro_state.humidity_ready && agro_state.temperature_ready;
     if (DHT_ENABLED && !agro_state.sensors_ready)

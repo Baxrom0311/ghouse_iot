@@ -29,8 +29,12 @@
 
 #define MOISTURE_SENSOR 32
 
-// LDR module AO/A0 output is wired to ESP32 D33/GPIO33.
+// LDR module DO/D0 digital output is wired to ESP32 D33/GPIO33.
 #define LIGHT_SENSOR 33
+#define LIGHT_SENSOR_DIGITAL 1
+#define LIGHT_SENSOR_DIGITAL_INPUT_MODE INPUT_PULLUP
+// If the displayed light value is inverted, change this to LOW.
+#define LIGHT_SENSOR_DIGITAL_LIGHT_LEVEL HIGH
 #define ANALOG_SENSOR_MIN_VALID_RAW 1
 #define ANALOG_SENSOR_MAX_VALID_RAW 4094
 
