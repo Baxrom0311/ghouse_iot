@@ -5,22 +5,27 @@
 #include "FastLED.h"
 #include "MHZ19.h"
 
-#define FAN_PIN 13
-#define SOIL_WATER_PUMP 26
-#define AIR_WATER_PUMP 25
+#define FAN_PIN 25
+#define SOIL_WATER_PUMP 27
+#define AIR_WATER_PUMP 14
+#define LED_RELAY_PIN 26
 // Set to 1 if your relay module turns ON when the input pin goes LOW.
 #define FAN_ACTIVE_LOW 1
 #define SOIL_WATER_PUMP_ACTIVE_LOW 1
 #define AIR_WATER_PUMP_ACTIVE_LOW 1
+#define LED_RELAY_ACTIVE_LOW 1
 #define FAN_OFF_USES_INPUT_MODE 1
 #define SOIL_WATER_PUMP_OFF_USES_INPUT_MODE 1
 #define AIR_WATER_PUMP_OFF_USES_INPUT_MODE 1
+#define LED_RELAY_OFF_USES_INPUT_MODE 1
 #define FAN_ON_LEVEL (FAN_ACTIVE_LOW ? LOW : HIGH)
 #define FAN_OFF_LEVEL (FAN_ACTIVE_LOW ? HIGH : LOW)
 #define SOIL_WATER_PUMP_ON_LEVEL (SOIL_WATER_PUMP_ACTIVE_LOW ? LOW : HIGH)
 #define SOIL_WATER_PUMP_OFF_LEVEL (SOIL_WATER_PUMP_ACTIVE_LOW ? HIGH : LOW)
 #define AIR_WATER_PUMP_ON_LEVEL (AIR_WATER_PUMP_ACTIVE_LOW ? LOW : HIGH)
 #define AIR_WATER_PUMP_OFF_LEVEL (AIR_WATER_PUMP_ACTIVE_LOW ? HIGH : LOW)
+#define LED_RELAY_ON_LEVEL (LED_RELAY_ACTIVE_LOW ? LOW : HIGH)
+#define LED_RELAY_OFF_LEVEL (LED_RELAY_ACTIVE_LOW ? HIGH : LOW)
 #define WATER_PUMP_MAX_RUNTIME_MS 120000UL
 
 #define MOISTURE_SENSOR 32
@@ -38,6 +43,10 @@
 
 #define STRIP_PIN 23
 #define NUMLEDS 10
+
+// Keep the old FastLED strip implementation available, but drive the current
+// plain LED through a relay by default.
+#define LED_DRIVER_RELAY 1
 
 void io_setup();
 void io_loop();

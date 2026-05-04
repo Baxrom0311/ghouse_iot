@@ -6,6 +6,7 @@ Turning on/off device by sending 1 or 0
 - ### `{id}/air_water_pump/control`
 
 - ### `{id}/led/control`
+    Controls the plain LED relay output. Send `1` to turn it on and `0` to turn it off.
 
 - ### `{id}/fan/control`
 
@@ -64,3 +65,9 @@ Controller sends responses here
 - Typical relay wiring: `GPIO13 -> IN`, `ESP32 GND -> relay GND`, `relay VCC -> 5V or module-rated VCC`, `12V+ -> relay COM`, `relay NO -> fan +`, `fan - -> 12V-`.
 - Keep the 12V fan power separate from the ESP32 GPIO. Grounds should be common only where the relay module/driver requires it.
 - Many relay boards are active-low. If your relay turns on when `GPIO13` is LOW, set `FAN_ACTIVE_LOW` to `1` in [`src/io_handler.h`](/Users/baxrom/ish_full/dimlom_ishi/smartgreenhouse/IotAgroAi/src/io_handler.h).
+
+# LED relay wiring
+- The current build uses a plain LED through a relay on `GPIO26` (`LED_RELAY_PIN`).
+- The MQTT/API device name stays `led`, so existing `{id}/led/control` commands still work.
+- Many relay boards are active-low. If your LED relay turns on when `GPIO26` is HIGH, set `LED_RELAY_ACTIVE_LOW` to `0` in [`src/io_handler.h`](/Users/baxrom/ish_full/dimlom_ishi/smartgreenhouse/IotAgroAi/src/io_handler.h).
+- The previous FastLED strip code is still present. Set `LED_DRIVER_RELAY` to `0` to use the old `STRIP_PIN`/`NUMLEDS` implementation.

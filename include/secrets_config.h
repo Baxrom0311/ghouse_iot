@@ -4,6 +4,9 @@
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
+#ifndef ALLOW_EXAMPLE_SECRETS
+#error "Create include/secrets.h from include/secrets.example.h before building firmware. Define ALLOW_EXAMPLE_SECRETS only for documentation/demo builds."
+#endif
 #include "secrets.example.h"
 #endif
 #else

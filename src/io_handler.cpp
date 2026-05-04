@@ -3,7 +3,9 @@
 #include <math.h>
 
 DHT dht(DHTPIN, DHTTYPE);
+#if !LED_DRIVER_RELAY
 CRGB leds[NUMLEDS];
+#endif
 #define RXD2 16
 #define TXD2 17
 HardwareSerial mySerial(2);
@@ -94,22 +96,30 @@ void io_setup()
         AIR_WATER_PUMP_ACTIVE_LOW,
         false,
         AIR_WATER_PUMP_OFF_USES_INPUT_MODE);
+    set_relay_output(
+        LED_RELAY_PIN,
+        LED_RELAY_ACTIVE_LOW,
+        false,
+        LED_RELAY_OFF_USES_INPUT_MODE);
     log_i(
-        "Relay polarity fan=%d soil=%d air=%d",
+        "Relay polarity fan=%d soil=%d air=%d led=%d",
         FAN_ACTIVE_LOW,
         SOIL_WATER_PUMP_ACTIVE_LOW,
-        AIR_WATER_PUMP_ACTIVE_LOW);
+        AIR_WATER_PUMP_ACTIVE_LOW,
+        LED_RELAY_ACTIVE_LOW);
     log_i(
-        "Output pins fan=%d soil=%d air=%d strip=%d",
+        "Output pins fan=%d soil=%d air=%d led=%d strip=%d",
         FAN_PIN,
         SOIL_WATER_PUMP,
         AIR_WATER_PUMP,
+        LED_RELAY_PIN,
         STRIP_PIN);
     log_i(
-        "Relay off mode fan=%s soil=%s air=%s",
+        "Relay off mode fan=%s soil=%s air=%s led=%s",
         FAN_OFF_USES_INPUT_MODE ? "input" : "drive",
         SOIL_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive",
-        AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive");
+        AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive",
+        LED_RELAY_OFF_USES_INPUT_MODE ? "input" : "drive");
 
 #if MHZ19_ENABLED
     mySerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
@@ -128,9 +138,14 @@ void io_setup()
     log_i("MH-Z19 sensor is disabled in io_handler.h");
 #endif
 
+#if LED_DRIVER_RELAY
+    log_i("LED driver relay enabled on pin=%d", LED_RELAY_PIN);
+#else
     FastLED.addLeds<WS2811, STRIP_PIN, GRB>(leds, NUMLEDS);
     FastLED.clear();
     FastLED.show();
+    log_i("FastLED strip enabled on pin=%d leds=%d", STRIP_PIN, NUMLEDS);
+#endif
 
 #if DHT_ENABLED
     dht.begin();
@@ -395,10 +410,24 @@ bool fan_has_co2_reading()
 }
 void turn_led(bool newState)
 {
+#if LED_DRIVER_RELAY
+    set_relay_output(
+        LED_RELAY_PIN,
+        LED_RELAY_ACTIVE_LOW,
+        newState,
+        LED_RELAY_OFF_USES_INPUT_MODE);
+#else
     fill_solid(leds, NUMLEDS, CHSV(0, 0, newState ? 255 : 0));
     FastLED.show();
+#endif
     agro_state.led = newState;
-    log_i("Turned led %d", agro_state.led);
+    log_i(
+        "LED state changed to %d (relay=%d pin=%d level=%d off_mode=%s)",
+        agro_state.led,
+        LED_DRIVER_RELAY,
+        LED_DRIVER_RELAY ? LED_RELAY_PIN : STRIP_PIN,
+        newState ? LED_RELAY_ON_LEVEL : LED_RELAY_OFF_LEVEL,
+        LED_RELAY_OFF_USES_INPUT_MODE ? "input" : "drive");
     enqueue_state_update();
 }
 void turn_fan(bool newState)
