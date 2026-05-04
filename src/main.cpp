@@ -137,8 +137,8 @@ void setup()
   connect_wifi_or_restart();
   log_i("Connected");
   sync_time_for_tls();
-  lcd.init();
   lcd.clear();
+  lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Wi-Fi OK");
   lcd.setCursor(0, 1);
