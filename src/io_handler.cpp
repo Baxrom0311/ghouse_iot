@@ -23,8 +23,10 @@ void update_sensors();
 void read_co2_sensor();
 void update_display_page();
 void enqueue_state_update();
+void enqueue_command_ack(const Command &command, const char *status, const char *message);
 void check_humidity();
 void check_fan();
+void enforce_pump_runtime_limits();
 bool fan_has_co2_reading();
 void set_relay_output(
     uint8_t pin,
@@ -117,7 +119,7 @@ void io_setup()
     if (myMHZ19.errorCode != RESULT_OK)
     {
         mhz19_available = false;
-        mhz19_retry_after = millis() + 60000;
+        mhz19_retry_after = millis();
         log_w("MH-Z19 init failed with error=%d, CO2 reads paused for 60s", myMHZ19.errorCode);
     }
     // myMHZ19.autoCalibration();
@@ -138,14 +140,17 @@ void io_setup()
 #endif
     log_i("IO setup complete. Commands and state changes will be printed to serial.");
 }
-Command recieved_command;
+Command received_command;
 uint32_t sensors_tmr;
 uint32_t display_update;
 uint32_t ai_check;
+uint32_t soil_water_pump_started_at;
+uint32_t air_water_pump_started_at;
 void io_loop()
 {
     command_handler();
     ai_handler();
+    enforce_pump_runtime_limits();
     if (millis() - sensors_tmr >= 5000)
     {
         sensors_tmr = millis();
@@ -159,43 +164,64 @@ void io_loop()
 }
 void command_handler()
 {
-    if (xQueueReceive(mqttToIo, &recieved_command, 0) == pdTRUE)
+    if (xQueueReceive(mqttToIo, &received_command, 0) == pdTRUE)
     {
         log_i(
             "Applying command %s with value=%d",
-            command_type_name(recieved_command.type),
-            recieved_command.value);
+            command_type_name(received_command.type),
+            received_command.value);
         if (agro_settings.ai_mode)
         {
             log_w("Manual command ignored because AI mode is enabled");
+            enqueue_command_ack(received_command, "failed", "ai mode enabled");
             return;
         }
-        switch (recieved_command.type)
+        switch (received_command.type)
         {
         case CommandType::CMD_AIR_WATER_PUMP:
         {
-            turn_air_water_pump(recieved_command.value != 0);
+            turn_air_water_pump(received_command.value != 0);
 
             break;
         }
         case CommandType::CMD_FAN:
         {
-            turn_fan(recieved_command.value != 0);
+            turn_fan(received_command.value != 0);
 
             break;
         }
         case CommandType::CMD_SOIL_WATER_PUMP:
         {
-            turn_soil_water_pump(recieved_command.value != 0);
+            turn_soil_water_pump(received_command.value != 0);
 
             break;
         }
         case CommandType::CMD_LED:
         {
-            turn_led(recieved_command.value != 0);
+            turn_led(received_command.value != 0);
             break;
         }
         }
+        enqueue_command_ack(received_command, "acknowledged", "applied");
+    }
+}
+
+void enqueue_command_ack(const Command &command, const char *status, const char *message)
+{
+    if (command.command_id[0] == '\0')
+    {
+        return;
+    }
+
+    Callback callback;
+    callback.type = CallbackType::CLB_COMMAND_ACK;
+    snprintf(callback.command_id, sizeof(callback.command_id), "%s", command.command_id);
+    snprintf(callback.status, sizeof(callback.status), "%s", status);
+    snprintf(callback.message, sizeof(callback.message), "%s", message);
+
+    if (xQueueSend(ioToMqtt, &callback, 0) != pdTRUE)
+    {
+        log_w("Command ack queue is full for command_id=%s", command.command_id);
     }
 }
 
@@ -248,7 +274,8 @@ void update_sensors()
     read_co2_sensor();
 
     int moisture_raw = analogRead(MOISTURE_SENSOR);
-    int moisture = constrain(map(moisture_raw, 0, 4096, 0, 100), 0, 100);
+    // Typical capacitive moisture sensors output high values when dry and low values when wet.
+    int moisture = constrain(map(moisture_raw, 4096, 0, 0, 100), 0, 100);
     agro_state.soil_moisture = moisture;
     int light_raw = analogRead(LIGHT_SENSOR);
     agro_state.light = constrain(map(light_raw, 0, 4096, 0, 100), 0, 100);
@@ -318,18 +345,23 @@ void update_display_page()
 #endif
 #endif
 
-    lcd.clear();
+    // Pad strings with spaces to overwrite previous characters
+    String s0 = String(line0);
+    while (s0.length() < 16) s0 += " ";
+    String s1 = String(line1);
+    while (s1.length() < 16) s1 += " ";
+
     lcd.setCursor(0, 0);
-    lcd.print(line0);
+    lcd.print(s0.c_str());
     lcd.setCursor(0, 1);
-    lcd.print(line1);
+    lcd.print(s1.c_str());
 }
 void read_co2_sensor()
 {
 #if !MHZ19_ENABLED
     return;
 #else
-    if (!mhz19_available && millis() < mhz19_retry_after)
+    if (!mhz19_available && (millis() - mhz19_retry_after < 60000))
     {
         return;
     }
@@ -350,7 +382,7 @@ void read_co2_sensor()
 
     mhz19_available = false;
     agro_state.air_co2_ready = false;
-    mhz19_retry_after = millis() + 60000;
+    mhz19_retry_after = millis();
 #endif
 }
 bool fan_has_co2_reading()
@@ -387,12 +419,21 @@ void turn_fan(bool newState)
 }
 void turn_soil_water_pump(bool newState)
 {
+    bool old_state = agro_state.soil_water_pump;
     set_relay_output(
         SOIL_WATER_PUMP,
         SOIL_WATER_PUMP_ACTIVE_LOW,
         newState,
         SOIL_WATER_PUMP_OFF_USES_INPUT_MODE);
     agro_state.soil_water_pump = newState;
+    if (newState && !old_state)
+    {
+        soil_water_pump_started_at = millis();
+    }
+    else if (!newState)
+    {
+        soil_water_pump_started_at = 0;
+    }
     log_i(
         "Soil water pump state changed to %d (pin=%d active_low=%d off_mode=%s)",
         agro_state.soil_water_pump,
@@ -403,12 +444,21 @@ void turn_soil_water_pump(bool newState)
 }
 void turn_air_water_pump(bool newState)
 {
+    bool old_state = agro_state.air_water_pump;
     set_relay_output(
         AIR_WATER_PUMP,
         AIR_WATER_PUMP_ACTIVE_LOW,
         newState,
         AIR_WATER_PUMP_OFF_USES_INPUT_MODE);
     agro_state.air_water_pump = newState;
+    if (newState && !old_state)
+    {
+        air_water_pump_started_at = millis();
+    }
+    else if (!newState)
+    {
+        air_water_pump_started_at = 0;
+    }
     log_i(
         "Air water pump state changed to %d (pin=%d active_low=%d off_mode=%s)",
         agro_state.air_water_pump,
@@ -416,6 +466,26 @@ void turn_air_water_pump(bool newState)
         AIR_WATER_PUMP_ACTIVE_LOW,
         AIR_WATER_PUMP_OFF_USES_INPUT_MODE ? "input" : "drive");
     enqueue_state_update();
+}
+void enforce_pump_runtime_limits()
+{
+    if (
+        agro_state.soil_water_pump &&
+        soil_water_pump_started_at != 0 &&
+        millis() - soil_water_pump_started_at > WATER_PUMP_MAX_RUNTIME_MS)
+    {
+        log_w("Soil water pump runtime exceeded %lu ms, emergency stopping", WATER_PUMP_MAX_RUNTIME_MS);
+        turn_soil_water_pump(false);
+    }
+
+    if (
+        agro_state.air_water_pump &&
+        air_water_pump_started_at != 0 &&
+        millis() - air_water_pump_started_at > WATER_PUMP_MAX_RUNTIME_MS)
+    {
+        log_w("Air water pump runtime exceeded %lu ms, emergency stopping", WATER_PUMP_MAX_RUNTIME_MS);
+        turn_air_water_pump(false);
+    }
 }
 void check_moisture()
 {
@@ -464,18 +534,34 @@ void check_fan()
     }
 
     bool should_turn_on = false;
-    bool should_turn_off = true;
+    bool should_turn_off = false;
 
     if (temperature_ready)
     {
-        should_turn_on = agro_state.temperature > agro_settings.max_temperature;
-        should_turn_off = agro_state.temperature < agro_settings.min_temperature;
+        if (agro_state.temperature > agro_settings.max_temperature) should_turn_on = true;
+        if (agro_state.temperature < agro_settings.min_temperature) should_turn_off = true;
     }
 
     if (co2_ready)
     {
-        should_turn_on = should_turn_on || agro_state.air_co2 > agro_settings.max_air_co2;
-        should_turn_off = should_turn_off && agro_state.air_co2 < agro_settings.min_air_co2;
+        if (agro_state.air_co2 > agro_settings.max_air_co2) should_turn_on = true;
+        if (agro_state.air_co2 < agro_settings.min_air_co2) should_turn_off = true;
+    }
+
+    // Resolve conflicts (e.g., Temp < min but CO2 > max)
+    if (should_turn_on && should_turn_off)
+    {
+        if (temperature_ready && agro_state.temperature < agro_settings.min_temperature)
+        {
+            // Freeze protection: temperature is too low, so DO NOT turn on the fan,
+            // even if CO2 is high.
+            should_turn_on = false;
+        }
+        else
+        {
+            // Otherwise, we prioritize cooling / exhausting over turning off
+            should_turn_off = false;
+        }
     }
 
     if (!agro_state.fan && should_turn_on)
@@ -497,9 +583,33 @@ void ai_handler()
     if (millis() - ai_check >= 2000)
     {
         ai_check = millis();
+        
+        // Moiture check (always has reading from analogRead, but we could add range check)
         check_moisture();
+        
+        // Light check
         check_light();
-        check_humidity();
-        check_fan();
+        
+        // Fail-safe for humidity
+        if (agro_state.humidity_ready)
+        {
+            check_humidity();
+        }
+        else if (agro_state.air_water_pump)
+        {
+            log_w("Humidity sensor not ready, emergency stopping air water pump");
+            turn_air_water_pump(false);
+        }
+
+        // Fail-safe for fan (temperature or CO2)
+        if (agro_state.temperature_ready || fan_has_co2_reading())
+        {
+            check_fan();
+        }
+        else if (agro_state.fan)
+        {
+            log_w("Temperature and CO2 sensors not ready, emergency stopping fan");
+            turn_fan(false);
+        }
     }
 }

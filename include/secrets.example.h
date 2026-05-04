@@ -4,10 +4,12 @@
 #define WIFI_PASSWORD "your-wifi-password"
 #define MQTT_BROKER_HOST "mqtt.boos.uz"
 #define MQTT_BROKER_PORT 443
-#define MQTT_CLIENT_ID "1"
+#define MQTT_CLIENT_ID "<unique-device-id>"
 #define MQTT_TLS_ENABLED 1
 #define MQTT_USERNAME ""
 #define MQTT_PASSWORD ""
+#define OTA_HOSTNAME "agroai-esp32"
+#define OTA_PASSWORD "<strong-ota-password>"
 
 static const char MQTT_ROOT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----

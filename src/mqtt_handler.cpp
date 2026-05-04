@@ -1,5 +1,6 @@
 #include <mqtt_handler.h>
 #include <display_handler.h>
+#include <ctype.h>
 
 #if MQTT_TLS_ENABLED
 namespace
@@ -32,6 +33,7 @@ void humidity_settings(const char *topic, const char *payload);
 void water_settings(const char *topic, const char *payload);
 void light_settings(const char *topic, const char *payload);
 void air_settings(const char *topic, const char *payload);
+void bulk_settings(const char *topic, const char *payload);
 void ping_mqtt(const char *topic, const char *payload);
 void ai_mode(const char *topic, const char *payload);
 void topic_id_update(const char *topic, const char *payload);
@@ -51,9 +53,12 @@ String topic_humidity_settings;
 String topic_moisture_settings;
 String topic_light_settings;
 String topic_air_settings;
+String topic_settings;
 String topic_ping;
 String topic_state;
 String topic_log;
+String topic_status;
+String topic_command_ack;
 String topic_topic_id_update;
 
 void configure_mqtt_transport()
@@ -69,6 +74,34 @@ String build_topic(const char *suffix)
     return agro_mqtt_topic_id + suffix;
 }
 
+bool valid_topic_id(const String &topic_id)
+{
+    if (topic_id.isEmpty() || topic_id.length() > 64)
+    {
+        return false;
+    }
+    if (topic_id.indexOf('/') >= 0 || topic_id.indexOf('+') >= 0 || topic_id.indexOf('#') >= 0)
+    {
+        return false;
+    }
+    for (size_t i = 0; i < topic_id.length(); i++)
+    {
+        char c = topic_id.charAt(i);
+        if (!isalnum(c) && c != '-' && c != '_')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool valid_bounds(int min_value, int max_value, int lower_limit, int upper_limit)
+{
+    return min_value >= lower_limit &&
+           max_value <= upper_limit &&
+           max_value > min_value;
+}
+
 void refresh_topics()
 {
     topic_mode_ai = build_topic("/mode/ai");
@@ -81,9 +114,12 @@ void refresh_topics()
     topic_moisture_settings = build_topic("/moisture/settings");
     topic_light_settings = build_topic("/light/settings");
     topic_air_settings = build_topic("/air/settings");
+    topic_settings = build_topic("/settings");
     topic_ping = build_topic("/ping");
     topic_state = build_topic("/state");
     topic_log = build_topic("/log");
+    topic_status = build_topic("/status");
+    topic_command_ack = build_topic("/command/ack");
     topic_topic_id_update = build_topic("/system/topic_id");
 }
 } // namespace
@@ -93,17 +129,119 @@ void log_topic_payload(const char *topic, const char *payload)
     log_i("Received MQTT topic=%s payload=%s", topic, payload);
 }
 
-void mqtt_setup();
-void mqtt_loop();
-void mqtt_main(void *p)
+String payload_command_id(JsonDocument &doc)
 {
-    mqtt_setup();
-    for (;;)
+    if (doc["command_id"].is<const char *>())
     {
-        mqtt_loop();
-        vTaskDelay(1);
+        return doc["command_id"].as<const char *>();
     }
+    return "";
 }
+
+int payload_value(const char *payload, JsonDocument &doc)
+{
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error)
+    {
+        return atoi(payload);
+    }
+
+    if (doc["value"].is<const char *>())
+    {
+        return atoi(doc["value"].as<const char *>());
+    }
+    if (doc["value"].is<int>())
+    {
+        return doc["value"].as<int>();
+    }
+
+    return atoi(payload);
+}
+
+void set_command_id(Command &command, const String &command_id)
+{
+    snprintf(command.command_id, sizeof(command.command_id), "%s", command_id.c_str());
+}
+
+void publish_command_ack(
+    const String &command_id,
+    const char *status = "acknowledged",
+    const char *message = "applied")
+{
+    if (command_id.isEmpty())
+    {
+        return;
+    }
+
+    JsonDocument doc;
+    doc["command_id"] = command_id;
+    doc["status"] = status;
+    doc["message"] = message;
+
+    String output;
+    serializeJson(doc, output);
+    bool ok = mqtt_client.publish(topic_command_ack.c_str(), output.c_str(), 1);
+    log_i(
+        "Published command ack=%d command_id=%s status=%s",
+        ok,
+        command_id.c_str(),
+        status);
+}
+
+bool queue_device_command(
+    const char *payload,
+    CommandType command_type,
+    const char *command_name)
+{
+    JsonDocument doc;
+    String command_id;
+    Command command;
+    command.type = command_type;
+    command.value = payload_value(payload, doc);
+    command_id = payload_command_id(doc);
+    set_command_id(command, command_id);
+    if (xQueueSend(mqttToIo, &command, 0) != pdTRUE)
+    {
+        log_w("Failed to queue %s command", command_name);
+        publish_command_ack(command_id, "failed", "queue full");
+        return false;
+    }
+    return true;
+}
+
+void apply_single_bounds_setting(
+    const char *payload,
+    int &min_value,
+    int &max_value,
+    const char *setting_name,
+    int lower_limit,
+    int upper_limit)
+{
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error)
+    {
+        log_i("error parsing JSON");
+        return;
+    }
+
+    String command_id = payload_command_id(doc);
+    int next_max = doc["max"] | max_value;
+    int next_min = doc["min"] | min_value;
+    if (!valid_bounds(next_min, next_max, lower_limit, upper_limit))
+    {
+        log_w("Ignoring invalid %s settings min=%d max=%d", setting_name, next_min, next_max);
+        publish_command_ack(command_id, "failed", "invalid settings");
+        return;
+    }
+
+    max_value = next_max;
+    min_value = next_min;
+    save_sensor_settings();
+    log_i("%s settings updated min=%d max=%d", setting_name, min_value, max_value);
+    publish_command_ack(command_id);
+}
+
 void mqtt_setup()
 {
     lcd.clear();
@@ -131,12 +269,19 @@ void mqtt_setup()
     mqtt_client.subscribe(topic_moisture_settings.c_str(), water_settings);
     mqtt_client.subscribe(topic_light_settings.c_str(), light_settings);
     mqtt_client.subscribe(topic_air_settings.c_str(), air_settings);
+    mqtt_client.subscribe(topic_settings.c_str(), bulk_settings);
 
     mqtt_client.subscribe(topic_ping.c_str(), ping_mqtt);
     mqtt_client.subscribe(topic_topic_id_update.c_str(), topic_id_update);
 
+    mqtt_client.will.topic = topic_status;
+    mqtt_client.will.payload = "offline";
+    mqtt_client.will.qos = 1;
+    mqtt_client.will.retain = true;
+
     mqtt_client.connected_callback = []
     {
+        mqtt_client.publish(topic_status.c_str(), "online", 1, true);
         lcd.clear();
         lcd.setCursor(6, 0);
         lcd.print("MQTT");
@@ -154,15 +299,18 @@ void mqtt_loop()
 void ping_mqtt(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    mqtt_client.publish(topic_log.c_str(), "OK");
+    mqtt_client.publish(topic_log.c_str(), "OK", 1);
 }
 void ai_mode(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    int new_mode = atoi(payload);
+    JsonDocument doc;
+    int new_mode = payload_value(payload, doc);
+    String command_id = payload_command_id(doc);
     agro_settings.ai_mode = new_mode != 0;
     save_ai_mode();
     log_i("AI mode changed to %d", agro_settings.ai_mode);
+    publish_command_ack(command_id);
 }
 void topic_id_update(const char *topic, const char *payload)
 {
@@ -189,12 +337,7 @@ void topic_id_update(const char *topic, const char *payload)
     }
     new_topic_id.trim();
     update_token.trim();
-    if (new_topic_id.isEmpty())
-    {
-        log_w("Ignoring empty MQTT topic id update");
-        return;
-    }
-    if (new_topic_id.indexOf('/') >= 0 || new_topic_id.indexOf('+') >= 0 || new_topic_id.indexOf('#') >= 0)
+    if (!valid_topic_id(new_topic_id))
     {
         log_w("Ignoring invalid MQTT topic id update=%s", new_topic_id.c_str());
         return;
@@ -224,7 +367,7 @@ void topic_id_update(const char *topic, const char *payload)
     bool ack_published = mqtt_client.publish(
         ack_topic.c_str(),
         ack_payload.c_str(),
-        true);
+        1);
     log_i(
         "Published topic id ack=%d on %s with payload=%s",
         ack_published,
@@ -247,125 +390,111 @@ void topic_id_update(const char *topic, const char *payload)
 void soil_water_pump_control(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    Command command;
-    command.type = CommandType::CMD_SOIL_WATER_PUMP;
-    command.value = atoi(payload);
-    if (xQueueSend(mqttToIo, &command, 0) != pdTRUE)
-    {
-        log_w("Failed to queue soil water pump command");
-    }
+    queue_device_command(payload, CommandType::CMD_SOIL_WATER_PUMP, "soil water pump");
 }
 void air_water_pump_control(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    Command command;
-    command.type = CommandType::CMD_AIR_WATER_PUMP;
-    command.value = atoi(payload);
-    if (xQueueSend(mqttToIo, &command, 0) != pdTRUE)
-    {
-        log_w("Failed to queue air water pump command");
-    }
+    queue_device_command(payload, CommandType::CMD_AIR_WATER_PUMP, "air water pump");
 }
 void led_control(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    Command command;
-    command.type = CommandType::CMD_LED;
-    command.value = atoi(payload);
-    if (xQueueSend(mqttToIo, &command, 0) != pdTRUE)
-    {
-        log_w("Failed to queue LED command");
-    }
+    queue_device_command(payload, CommandType::CMD_LED, "LED");
 }
 void fan_control(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    Command command;
-    command.type = CommandType::CMD_FAN;
-    command.value = atoi(payload);
-    if (xQueueSend(mqttToIo, &command, 0) != pdTRUE)
-    {
-        log_w("Failed to queue fan command");
-    }
+    queue_device_command(payload, CommandType::CMD_FAN, "fan");
 }
 
 void temperature_settings(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error)
-    {
-        log_i("error parsing JSON");
-        return;
-    }
-    agro_settings.max_temperature = doc["max"];
-    agro_settings.min_temperature = doc["min"];
-    save_sensor_settings();
-    log_i(
-        "Temperature settings updated min=%d max=%d",
+    apply_single_bounds_setting(
+        payload,
         agro_settings.min_temperature,
-        agro_settings.max_temperature);
+        agro_settings.max_temperature,
+        "temperature",
+        -20,
+        80);
 }
 void humidity_settings(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error)
-    {
-        log_i("error parsing JSON");
-        return;
-    }
-    agro_settings.max_humidity = doc["max"];
-    agro_settings.min_humidity = doc["min"];
-    save_sensor_settings();
-    log_i(
-        "Humidity settings updated min=%d max=%d",
+    apply_single_bounds_setting(
+        payload,
         agro_settings.min_humidity,
-        agro_settings.max_humidity);
+        agro_settings.max_humidity,
+        "humidity",
+        0,
+        100);
 }
 void water_settings(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error)
-    {
-        log_i("error parsing JSON");
-        return;
-    }
-    agro_settings.max_moisture = doc["max"];
-    agro_settings.min_moisture = doc["min"];
-    save_sensor_settings();
-    log_i(
-        "Moisture settings updated min=%d max=%d",
+    apply_single_bounds_setting(
+        payload,
         agro_settings.min_moisture,
-        agro_settings.max_moisture);
+        agro_settings.max_moisture,
+        "moisture",
+        0,
+        100);
 }
 void light_settings(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
-    JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error)
-    {
-        log_i("error parsing JSON");
-        return;
-    }
-    agro_settings.max_light = doc["max"];
-    agro_settings.min_light = doc["min"];
-    save_sensor_settings();
-    log_i(
-        "Light settings updated min=%d max=%d",
+    apply_single_bounds_setting(
+        payload,
         agro_settings.min_light,
-        agro_settings.max_light);
+        agro_settings.max_light,
+        "light",
+        0,
+        100);
 }
 void air_settings(const char *topic, const char *payload)
+{
+    log_topic_payload(topic, payload);
+    apply_single_bounds_setting(
+        payload,
+        agro_settings.min_air_co2,
+        agro_settings.max_air_co2,
+        "air",
+        0,
+        10000);
+}
+
+bool update_bounds(
+    JsonVariantConst setting,
+    int &min_value,
+    int &max_value,
+    const char *setting_name,
+    int lower_limit,
+    int upper_limit)
+{
+    if (setting.isNull())
+    {
+        return false;
+    }
+
+    int next_min = setting["min"] | min_value;
+    int next_max = setting["max"] | max_value;
+    if (!valid_bounds(next_min, next_max, lower_limit, upper_limit))
+    {
+        log_w(
+            "Ignoring invalid %s bulk settings min=%d max=%d",
+            setting_name,
+            next_min,
+            next_max);
+        return false;
+    }
+
+    min_value = next_min;
+    max_value = next_max;
+    return true;
+}
+
+void bulk_settings(const char *topic, const char *payload)
 {
     log_topic_payload(topic, payload);
     JsonDocument doc;
@@ -376,13 +505,56 @@ void air_settings(const char *topic, const char *payload)
         log_i("error parsing JSON");
         return;
     }
-    agro_settings.max_air_co2 = doc["max"];
-    agro_settings.min_air_co2 = doc["min"];
-    save_sensor_settings();
-    log_i(
-        "Air settings updated min=%d max=%d",
-        agro_settings.min_air_co2,
-        agro_settings.max_air_co2);
+    String command_id = payload_command_id(doc);
+
+    bool changed = false;
+    changed = update_bounds(
+                  doc["temperature"],
+                  agro_settings.min_temperature,
+                  agro_settings.max_temperature,
+                  "temperature",
+                  -20,
+                  80) ||
+              changed;
+    changed = update_bounds(
+                  doc["humidity"],
+                  agro_settings.min_humidity,
+                  agro_settings.max_humidity,
+                  "humidity",
+                  0,
+                  100) ||
+              changed;
+    changed = update_bounds(
+                  doc["moisture"],
+                  agro_settings.min_moisture,
+                  agro_settings.max_moisture,
+                  "moisture",
+                  0,
+                  100) ||
+              changed;
+    changed = update_bounds(
+                  doc["light"],
+                  agro_settings.min_light,
+                  agro_settings.max_light,
+                  "light",
+                  0,
+                  100) ||
+              changed;
+    changed = update_bounds(
+                  doc["air"],
+                  agro_settings.min_air_co2,
+                  agro_settings.max_air_co2,
+                  "air",
+                  0,
+                  10000) ||
+              changed;
+
+    if (changed)
+    {
+        save_sensor_settings();
+        log_i("Bulk sensor settings updated");
+    }
+    publish_command_ack(command_id);
 }
 
 void pub_states()
@@ -426,54 +598,24 @@ void pub_states()
     doc.shrinkToFit(); // optional
 
     serializeJson(doc, output);
-    mqtt_client.publish(topic_state.c_str(), output);
-}
-void pub_fan_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "fan:" + String(agro_state.fan));
-}
-void pub_led_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "led:" + String(agro_state.led));
-}
-void pub_soil_water_pump_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "soil_water_pump:" + String(agro_state.soil_water_pump));
-}
-void pub_air_water_pump_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "air_water_pump:" + String(agro_state.air_water_pump));
-}
-
-void pub_air_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "air:" + String(agro_state.air_co2));
-}
-void pub_light_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "light:" + String(agro_state.light));
-}
-void pub_humidity_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "humidity:" + String(agro_state.humidity));
-}
-void pub_temperature_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "temperature:" + String(agro_state.temperature));
-}
-void pub_moisture_state()
-{
-    mqtt_client.publish(topic_state.c_str(), "moisture:" + String(agro_state.soil_moisture));
+    mqtt_client.publish(topic_state.c_str(), output, 1, true);
 }
 
 void callback_handler()
 {
-    Callback recieved_callback;
-    if (xQueueReceive(ioToMqtt, &recieved_callback, 0) == pdTRUE)
+    Callback received_callback;
+    if (xQueueReceive(ioToMqtt, &received_callback, 0) == pdTRUE)
     {
-        if (recieved_callback.type == CallbackType::CLB_UPDATE)
+        if (received_callback.type == CallbackType::CLB_UPDATE)
         {
             pub_states();
+        }
+        else if (received_callback.type == CallbackType::CLB_COMMAND_ACK)
+        {
+            publish_command_ack(
+                String(received_callback.command_id),
+                received_callback.status,
+                received_callback.message);
         }
     }
 }

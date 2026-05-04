@@ -52,15 +52,20 @@ struct Command
 {
     CommandType type;
     int value;
+    char command_id[40] = "";
 };
 
 enum class CallbackType
 {
-    CLB_UPDATE
+    CLB_UPDATE,
+    CLB_COMMAND_ACK
 };
 struct Callback
 {
     CallbackType type;
+    char command_id[40] = "";
+    char status[16] = "";
+    char message[48] = "";
 };
 
 extern QueueHandle_t mqttToIo;

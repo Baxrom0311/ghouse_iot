@@ -38,6 +38,14 @@
 #define MQTT_TLS_HANDSHAKE_TIMEOUT_SEC 15
 #endif
 
+#ifndef OTA_HOSTNAME
+#define OTA_HOSTNAME "agroai-esp32"
+#endif
+
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD "change-me-before-flashing"
+#endif
+
 #if MQTT_TLS_ENABLED
 extern const char MQTT_ROOT_CA[] PROGMEM;
 #endif
