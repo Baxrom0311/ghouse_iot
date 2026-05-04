@@ -24,6 +24,7 @@ void check_humidity();
 void check_fan();
 void enforce_pump_runtime_limits();
 bool fan_has_co2_reading();
+bool analog_reading_ready(int raw);
 void set_relay_output(
     uint8_t pin,
     bool active_low,
@@ -45,6 +46,11 @@ const char *command_type_name(CommandType type)
         return "fan";
     }
     return "unknown";
+}
+
+bool analog_reading_ready(int raw)
+{
+    return raw >= ANALOG_SENSOR_MIN_VALID_RAW && raw <= ANALOG_SENSOR_MAX_VALID_RAW;
 }
 
 void set_relay_output(
@@ -277,13 +283,28 @@ void update_sensors()
     read_air_sensor();
 
     int moisture_raw = analogRead(MOISTURE_SENSOR);
-    // Typical capacitive moisture sensors output high values when dry and low values when wet.
-    int moisture = constrain(map(moisture_raw, 4096, 0, 0, 100), 0, 100);
-    agro_state.soil_moisture = moisture;
-    agro_state.soil_moisture_ready = true;
+    agro_state.soil_moisture_ready = analog_reading_ready(moisture_raw);
+    if (agro_state.soil_moisture_ready)
+    {
+        // Typical capacitive moisture sensors output high values when dry and low values when wet.
+        int moisture = constrain(map(moisture_raw, 4096, 0, 0, 100), 0, 100);
+        agro_state.soil_moisture = moisture;
+    }
+    else
+    {
+        log_w("Moisture sensor raw=%d outside valid range", moisture_raw);
+    }
+
     int light_raw = analogRead(LIGHT_SENSOR);
-    agro_state.light = constrain(map(light_raw, 0, 4096, 0, 100), 0, 100);
-    agro_state.light_ready = true;
+    agro_state.light_ready = analog_reading_ready(light_raw);
+    if (agro_state.light_ready)
+    {
+        agro_state.light = constrain(map(light_raw, 0, 4096, 0, 100), 0, 100);
+    }
+    else
+    {
+        log_w("Light sensor raw=%d outside valid range", light_raw);
+    }
     log_i(
         "Moisture raw=%d pct=%d | Light raw=%d pct=%d",
         moisture_raw,
