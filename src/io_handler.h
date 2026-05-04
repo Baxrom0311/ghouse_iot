@@ -30,7 +30,7 @@
 
 #define MOISTURE_SENSOR 32
 #define LIGHT_SENSOR 33
-#define DHTPIN 27
+#define DHTPIN 23
 #define DHT_ENABLED 1
 
 // MH_RX_PIN 10
@@ -47,6 +47,10 @@
 // Keep the old FastLED strip implementation available, but drive the current
 // plain LED through a relay by default.
 #define LED_DRIVER_RELAY 1
+
+#if !LED_DRIVER_RELAY && DHTPIN == STRIP_PIN
+#error "DHTPIN conflicts with STRIP_PIN when FastLED strip mode is enabled."
+#endif
 
 void io_setup();
 void io_loop();
