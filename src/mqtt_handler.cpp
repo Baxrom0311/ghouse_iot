@@ -2,6 +2,7 @@
 #include <display_handler.h>
 #include <io_handler.h>
 #include <ctype.h>
+#include <time.h>
 
 #if MQTT_TLS_ENABLED
 namespace
@@ -61,6 +62,8 @@ String topic_log;
 String topic_status;
 String topic_command_ack;
 String topic_topic_id_update;
+uint32_t telemetry_sequence = 0;
+constexpr uint8_t MQTT_CALLBACKS_PER_LOOP = 16;
 
 void configure_mqtt_transport()
 {
@@ -607,22 +610,40 @@ void pub_states()
     doc[F("soil_water_pump")] = agro_state.soil_water_pump;
     doc[F("air_water_pump")] = agro_state.air_water_pump;
     doc[F("ai_mode")] = agro_settings.ai_mode;
+    doc[F("seq")] = ++telemetry_sequence;
+    doc[F("uptime_ms")] = millis();
+
+    time_t now = time(nullptr);
+    if (now > 1700000000)
+    {
+        doc[F("timestamp")] = static_cast<int64_t>(now);
+    }
 
     String output;
 
     doc.shrinkToFit(); // optional
 
     serializeJson(doc, output);
-    mqtt_client.publish(topic_state.c_str(), output, 1, true);
+    bool ok = mqtt_client.publish(topic_state.c_str(), output, 1, true);
+    if (!ok)
+    {
+        log_w("Failed to publish state seq=%lu", static_cast<unsigned long>(telemetry_sequence));
+    }
 }
 
 void callback_handler()
 {
     Callback received_callback;
-    if (xQueueReceive(ioToMqtt, &received_callback, 0) == pdTRUE)
+    for (uint8_t processed = 0; processed < MQTT_CALLBACKS_PER_LOOP; processed++)
     {
+        if (xQueueReceive(ioToMqtt, &received_callback, 0) != pdTRUE)
+        {
+            return;
+        }
+
         if (received_callback.type == CallbackType::CLB_UPDATE)
         {
+            state_update_queued = false;
             pub_states();
         }
         else if (received_callback.type == CallbackType::CLB_COMMAND_ACK)

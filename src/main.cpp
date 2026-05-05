@@ -15,6 +15,8 @@ constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
 constexpr uint32_t TLS_TIME_SYNC_TIMEOUT_MS = 15000;
 constexpr uint32_t WATCHDOG_TIMEOUT_SEC = 45;
+constexpr UBaseType_t MQTT_TO_IO_QUEUE_LENGTH = 16;
+constexpr UBaseType_t IO_TO_MQTT_QUEUE_LENGTH = 32;
 uint32_t last_wifi_reconnect_attempt = 0;
 
 void mqtt_task(void *parameter)
@@ -144,8 +146,8 @@ void setup()
   lcd.setCursor(0, 1);
   lcd.print("MQTT...");
   delay(200);
-  mqttToIo = xQueueCreate(10, sizeof(Command));
-  ioToMqtt = xQueueCreate(10, sizeof(Callback));
+  mqttToIo = xQueueCreate(MQTT_TO_IO_QUEUE_LENGTH, sizeof(Command));
+  ioToMqtt = xQueueCreate(IO_TO_MQTT_QUEUE_LENGTH, sizeof(Callback));
   if (mqttToIo == nullptr || ioToMqtt == nullptr)
   {
     log_e("Failed to create FreeRTOS queues");

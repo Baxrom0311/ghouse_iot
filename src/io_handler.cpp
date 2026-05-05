@@ -177,12 +177,12 @@ void io_loop()
     command_handler();
     ai_handler();
     enforce_pump_runtime_limits();
-    if (millis() - sensors_tmr >= 5000)
+    if (millis() - sensors_tmr >= SENSOR_PUBLISH_INTERVAL_MS)
     {
         sensors_tmr = millis();
         update_sensors();
     }
-    if (millis() - display_update >= 5000)
+    if (millis() - display_update >= DISPLAY_REFRESH_INTERVAL_MS)
     {
         display_update = millis();
         update_display_page();
@@ -190,8 +190,13 @@ void io_loop()
 }
 void command_handler()
 {
-    if (xQueueReceive(mqttToIo, &received_command, 0) == pdTRUE)
+    for (uint8_t processed = 0; processed < IO_COMMANDS_PER_LOOP; processed++)
     {
+        if (xQueueReceive(mqttToIo, &received_command, 0) != pdTRUE)
+        {
+            return;
+        }
+
         log_i(
             "Applying command %s with value=%d",
             command_type_name(received_command.type),
@@ -200,7 +205,7 @@ void command_handler()
         {
             log_w("Manual command ignored because AI mode is enabled");
             enqueue_command_ack(received_command, "failed", "ai mode enabled");
-            return;
+            continue;
         }
         switch (received_command.type)
         {
@@ -253,12 +258,20 @@ void enqueue_command_ack(const Command &command, const char *status, const char 
 
 void enqueue_state_update()
 {
+    if (state_update_queued)
+    {
+        return;
+    }
+
     Callback callback;
     callback.type = CallbackType::CLB_UPDATE;
     if (xQueueSend(ioToMqtt, &callback, 0) != pdTRUE)
     {
         log_w("State update queue is full");
+        return;
     }
+
+    state_update_queued = true;
 }
 
 void update_sensors()
@@ -673,7 +686,7 @@ void ai_handler()
         return;
     }
 
-    if (millis() - ai_check >= 2000)
+    if (millis() - ai_check >= AI_CHECK_INTERVAL_MS)
     {
         ai_check = millis();
         
