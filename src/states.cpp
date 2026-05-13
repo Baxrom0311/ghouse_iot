@@ -10,6 +10,8 @@ States agro_state;
 SensorSettings agro_settings;
 String agro_mqtt_topic_id = MQTT_CLIENT_ID;
 volatile bool state_update_queued = false;
+volatile bool wifi_connected = false;
+volatile bool mqtt_connected = false;
 
 namespace
 {

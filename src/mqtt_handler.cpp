@@ -285,6 +285,7 @@ void mqtt_setup()
 
     mqtt_client.connected_callback = []
     {
+        mqtt_connected = true;
         mqtt_client.publish(topic_status.c_str(), "online", 1, true);
         lcd.clear();
         lcd.setCursor(6, 0);
@@ -298,6 +299,7 @@ void mqtt_setup()
 void mqtt_loop()
 {
     mqtt_client.loop();
+    mqtt_connected = mqtt_client.connected();
     callback_handler();
 }
 void ping_mqtt(const char *topic, const char *payload)
@@ -639,6 +641,16 @@ void callback_handler()
         if (xQueueReceive(ioToMqtt, &received_callback, 0) != pdTRUE)
         {
             return;
+        }
+
+        if (!wifi_connected || !mqtt_client.connected())
+        {
+            // WiFi/MQTT yo'q — queue ni tozalash, lekin publish qilmaslik
+            if (received_callback.type == CallbackType::CLB_UPDATE)
+            {
+                state_update_queued = false;
+            }
+            continue;
         }
 
         if (received_callback.type == CallbackType::CLB_UPDATE)

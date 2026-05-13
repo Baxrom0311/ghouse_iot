@@ -18,6 +18,7 @@ constexpr uint32_t WATCHDOG_TIMEOUT_SEC = 45;
 constexpr UBaseType_t MQTT_TO_IO_QUEUE_LENGTH = 16;
 constexpr UBaseType_t IO_TO_MQTT_QUEUE_LENGTH = 32;
 uint32_t last_wifi_reconnect_attempt = 0;
+bool mqtt_task_started = false;
 
 void mqtt_task(void *parameter)
 {
@@ -42,7 +43,7 @@ void io_task(void *parameter)
   }
 }
 
-void connect_wifi_or_restart()
+void connect_wifi()
 {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -55,18 +56,11 @@ void connect_wifi_or_restart()
     esp_task_wdt_reset();
     delay(500);
     log_i(".");
-    lcd.print(".");
   }
-  if (WiFi.status() != WL_CONNECTED)
+  wifi_connected = (WiFi.status() == WL_CONNECTED);
+  if (!wifi_connected)
   {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Wi-Fi failed");
-    lcd.setCursor(0, 1);
-    lcd.print("Restarting...");
-    log_e("Wi-Fi connection timed out");
-    delay(3000);
-    ESP.restart();
+    log_w("Wi-Fi connection timed out, continuing offline");
   }
 }
 
@@ -94,8 +88,15 @@ void sync_time_for_tls()
 
 void keep_wifi_connected()
 {
-  if (WiFi.status() == WL_CONNECTED)
+  bool was_connected = wifi_connected;
+  wifi_connected = (WiFi.status() == WL_CONNECTED);
+
+  if (wifi_connected)
   {
+    if (!was_connected)
+    {
+      log_i("Wi-Fi reconnected");
+    }
     return;
   }
 
@@ -129,23 +130,9 @@ void setup()
   io_setup();
   lcd.init();
   lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("Connecting to");
-  lcd.setCursor(0, 1);
-  lcd.print("Wi-Fi");
-  delay(2000);
   load_settings();
-  log_i("Connecting...");
-  connect_wifi_or_restart();
-  log_i("Connected");
-  sync_time_for_tls();
-  lcd.clear();
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("Wi-Fi OK");
-  lcd.setCursor(0, 1);
-  lcd.print("MQTT...");
-  delay(200);
+
+  // Queues yaratish (io_task uchun kerak)
   mqttToIo = xQueueCreate(MQTT_TO_IO_QUEUE_LENGTH, sizeof(Command));
   ioToMqtt = xQueueCreate(IO_TO_MQTT_QUEUE_LENGTH, sizeof(Callback));
   if (mqttToIo == nullptr || ioToMqtt == nullptr)
@@ -153,15 +140,59 @@ void setup()
     log_e("Failed to create FreeRTOS queues");
     ESP.restart();
   }
-  xTaskCreatePinnedToCore(mqtt_task, "mqtt_task", 8192, nullptr, 2, nullptr, 0);
+
+  // IO task ni darhol ishga tushirish (WiFi siz ham ishlaydi)
   xTaskCreatePinnedToCore(io_task, "io_task", 8192, nullptr, 2, nullptr, 1);
-  ota_setup();
+
+  // WiFi ulanishga harakat
+  lcd.setCursor(0, 0);
+  lcd.print("Wi-Fi...");
+  log_i("Connecting...");
+  connect_wifi();
+
+  if (wifi_connected)
+  {
+    log_i("Connected");
+    sync_time_for_tls();
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Wi-Fi OK");
+    lcd.setCursor(0, 1);
+    lcd.print("MQTT...");
+    delay(200);
+    xTaskCreatePinnedToCore(mqtt_task, "mqtt_task", 8192, nullptr, 2, nullptr, 0);
+    ota_setup();
+    mqtt_task_started = true;
+  }
+  else
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("OFFLINE");
+    lcd.setCursor(0, 1);
+    lcd.print("Sensors OK");
+    delay(1000);
+  }
 }
 
 void loop()
 {
   esp_task_wdt_reset();
   keep_wifi_connected();
-  ota_loop();
+
+  // WiFi qayta ulanganda MQTT task ni ishga tushirish
+  if (wifi_connected && !mqtt_task_started)
+  {
+    sync_time_for_tls();
+    xTaskCreatePinnedToCore(mqtt_task, "mqtt_task", 8192, nullptr, 2, nullptr, 0);
+    ota_setup();
+    mqtt_task_started = true;
+    log_i("MQTT task started after WiFi connected");
+  }
+
+  if (wifi_connected)
+  {
+    ota_loop();
+  }
   vTaskDelay(pdMS_TO_TICKS(50));
 }

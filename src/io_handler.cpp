@@ -370,6 +370,24 @@ void update_display_page()
     lcd.setCursor(0, 0);
     lcd.print("AgroAi");
 
+    // WiFi/MQTT status indikatori
+    lcd.setCursor(8, 0);
+    if (wifi_connected && mqtt_connected)
+    {
+        lcd.setTextColor(ST77XX_GREEN);
+        lcd.print("ON");
+    }
+    else if (wifi_connected)
+    {
+        lcd.setTextColor(ST77XX_YELLOW);
+        lcd.print("WF");
+    }
+    else
+    {
+        lcd.setTextColor(ST77XX_RED);
+        lcd.print("OF");
+    }
+
     lcd.setTextColor(agro_settings.ai_mode ? ST77XX_GREEN : ST77XX_YELLOW);
     lcd.setCursor(0, 1);
     lcd.print(agro_settings.ai_mode ? "Mode:AI" : "Mode:MAN");

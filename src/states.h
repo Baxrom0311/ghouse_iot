@@ -75,6 +75,8 @@ extern QueueHandle_t ioToMqtt;
 extern States agro_state;
 extern SensorSettings agro_settings;
 extern volatile bool state_update_queued;
+extern volatile bool wifi_connected;
+extern volatile bool mqtt_connected;
 
 void load_settings();
 void save_ai_mode();
